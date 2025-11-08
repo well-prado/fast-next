@@ -1,0 +1,66 @@
+# Router & Validation Guide
+
+The router package (`@fast-next/fastify-zod-router`) is the backbone of the framework. This guide dives into its API and best practices.
+
+## Creating a router
+
+```ts
+import { createRouter } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+const userSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+});
+
+export const usersRouter = createRouter()
+  .get("/users/:id", {
+    schema: {
+      params: z.object({ id: z.string() }),
+      response: {
+        200: userSchema,
+        404: z.object({ error: z.string() }),
+      },
+    },
+    handler: async ({ params }, reply) => {
+      const user = await db.getUser(params.id);
+      if (!user) {
+        reply.code(404);
+        return { error: "User not found" };
+      }
+      return user;
+    },
+  })
+  .build();
+```
+
+### Type inference
+
+- `request.params`, `request.body`, `request.query` all reflect your Zod schema.
+- The returned type (`RouteGenericFromSchema["Reply"]`) matches your `response` definition. If you add/remove fields, the compiler nudges every consumer (HTTP clients, server caller, future generated SDKs).
+
+### JSON Schema output
+
+When you call `.register(app)`, each route is registered via `app.route(...)` with:
+
+- `schema.body` → Fastify `body`
+- `schema.query`/`querystring` → `querystring`
+- `schema.params` → `params`
+- `schema.response` → per-status JSON Schema object
+
+You can inspect the converted schema via `buildFastifySchema` if you need custom tooling.
+
+### Prefixing and composition
+
+Pass `{ prefix: "/v1" }` to `.register(app, { prefix })` to namespace the routes without changing the definition. This keeps your routers environment-agnostic—you can mount them under different prefixes in tests vs. production.
+
+---
+
+## Patterns & Tips
+
+- **Colocate** `schemas.ts`, `service.ts`, and `routes.ts` within each feature folder. Import the schema into the router; import the router into `registerCoreRoutes`.
+- **Map status codes explicitly** when returning error objects, even if they share the same shape. This makes the server caller (and future HTTP clients) aware of all possible replies.
+- **Return primitives when possible**: The JSON Schema conversion handles strings/numbers/booleans without extra work, so feel free to respond with `z.literal` types when you need sentinel values.
+- **Use `route()` for uncommon verbs**: e.g., `builder.route("OPTIONS", "/users", {...})`.
+
+With these conventions, every new feature stays predictable—mirroring the low-entropy design goals of Igniter.js.

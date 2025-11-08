@@ -1,0 +1,30 @@
+# Fast Next Documentation
+
+Welcome to the living docs for the Fastify + Next.js integration that powers the `apps/web` project. This guide mirrors the depth of the Igniter.js docs while focusing entirely on the vertical slice that already works in this repository.
+
+## Why This Exists
+
+- **Single source of truth** – Define routes once with Zod and reuse them everywhere.
+- **Three consumption modes** – HTTP via Next.js, typed server caller, and (soon) generated clients.
+- **Feature-oriented workflow** – Colocate schemas, handlers, and services inside `apps/web/src/server`.
+
+The goal is to help you (and your future self) ship new features quickly without re-learning conventions or spelunking through framework code.
+
+## Core Packages
+
+| Package | Purpose |
+| --- | --- |
+| `@fast-next/fastify-next-adapter` | Translates `NextRequest` → `fastify.inject` and back, handling headers, binary payloads, and base-path stripping. |
+| `@fast-next/fastify-app-factory` | Lazily builds a singleton Fastify instance with plugin hooks and dev-safe HMR resets. |
+| `@fast-next/fastify-zod-router` | Fluent router builder that stores method/path/schema metadata and emits Fastify JSON Schema. |
+| `@fast-next/fastify-server-caller` | Creates a typed `caller(method, path, options)` helper that executes handlers without HTTP. |
+
+These packages live in `packages/*` and are wired into `apps/web`.
+
+## Who This Doc Is For
+
+- Anyone adding a new feature under `apps/web`.
+- Teammates (human or AI) who need to understand the architecture quickly.
+- Future automation (CLIs, generators) that will rely on the documented conventions.
+
+Keep reading for installation, quickstart, architecture deep dives, and end-to-end recipes.

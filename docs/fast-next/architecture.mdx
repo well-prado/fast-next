@@ -1,0 +1,45 @@
+# Architecture Overview
+
+This section explains how the Fast Next stack stitches Next.js and Fastify together.
+
+## High-level flow
+
+```
+[Next Request] -> apps/web/app/api/[...fastify]/route.ts
+  -> handleNextRequest()  (adapter)
+    -> fastify.inject()
+      -> Fastify instance from getFastifyApp()
+        -> registerCoreRoutes() registers coreRouter routes
+```
+
+### Fastify instance lifecycle
+
+- `apps/web/src/server/fastify-app.ts` calls `getFastifyApp` with a `configureApp` hook.
+- `@fast-next/fastify-app-factory` memoizes the instance in both module scope and `globalThis.__FAST_NEXT_FASTIFY_APP__` during development to avoid HMR leaks.
+- `resetFastifyApp()` exists for future tests if you need a clean slate.
+
+### Routing + validation
+
+- `createRouter()` (from `@fast-next/fastify-zod-router`) builds an in-memory array of `{ method, path, schema, handler }`.
+- When you call `.build()` you get `{ routes, register }`.
+- `register(app)` loops over every route and calls `app.route({ method, url, schema, handler })`, where `schema` is the JSON Schema version of your Zod definitions (status-by-status if needed).
+
+### Next.js adapter
+
+`apps/web/app/api/[...fastify]/route.ts` forwards all HTTP verbs to the adapter:
+
+```ts
+export const GET = handle;
+export const POST = handle;
+// ...
+```
+
+`handle(req)` resolves the Fastify instance, converts the `NextRequest` into an inject call, and translates the result back into `NextResponse`.
+
+### Server caller
+
+- `createServerCaller(coreRouter)` builds a typed dispatcher.
+- When invoked, it finds the matching route definition, fabricates `FastifyRequest/Reply` shims, executes the handler, and returns `{ statusCode, headers, body }`.
+- Because the `coreRouter` metadata includes literal method + path strings, TypeScript narrows the valid combinations for you.
+
+Together these pieces provide the “define once, consume anywhere” workflow that mirrors Igniter.js’ router/controller pairing.

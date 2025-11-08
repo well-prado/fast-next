@@ -1,0 +1,53 @@
+# Quickstart
+
+Follow this checklist to get the Fast Next stack running locally and understand the moving parts before building your first feature.
+
+## 1. Install dependencies
+
+```bash
+pnpm install
+```
+
+> pnpm 9+ is required. Node 18.18+ recommended (Next 16 + Fastify 5 support).
+
+## 2. Run the web app
+
+```bash
+pnpm --filter web dev
+```
+
+This boots Next.js on `http://localhost:3000` and mounts the Fastify instance behind the `/api/*` catch-all route.
+
+## 3. Smoke test the HTTP path
+
+```bash
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/users/1
+```
+
+Both responses come from Fastify handlers defined in `apps/web/src/server/routes/index.ts`.
+
+## 4. Inspect the server client demo
+
+Open `apps/web/app/page.tsx`. The default home page is an **async Server Component** that fetches a featured user via:
+
+```ts
+const result = await api.get.user.query({
+  params: { id: "1" },
+});
+```
+
+Because this runs inside the same process there is no HTTP overhead, yet the response types match the Zod schemas thanks to the typed server caller + auto-generated helpers.
+
+## 5. Run type and lint pipelines
+
+```bash
+pnpm --filter @fast-next/fastify-zod-router check-types
+pnpm --filter @fast-next/fastify-server-caller check-types
+pnpm --filter web check-types
+pnpm lint
+```
+
+These commands ensure every package stays type-safe while you iterate.
+
+With the basics working you’re ready to explore the architecture and build your own feature. Continue with the next sections for deeper dives.

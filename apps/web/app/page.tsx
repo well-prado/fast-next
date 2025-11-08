@@ -1,5 +1,7 @@
 import Image, { type ImageProps } from "next/image";
 import { Button } from "@repo/ui/button";
+import { api } from "@/server/api";
+import type { Project, User } from "@/server/routes";
 import styles from "./page.module.css";
 
 type Props = Omit<ImageProps, "src"> & {
@@ -18,7 +20,34 @@ const ThemeImage = (props: Props) => {
   );
 };
 
-export default function Home() {
+async function getFeaturedUser(): Promise<User | null> {
+  const result = await api.users.get.query({
+    params: { id: "1" },
+  });
+
+  if (result.statusCode !== 200) {
+    return null;
+  }
+
+  return (result.data ?? null) as User | null;
+}
+
+async function getProjects(): Promise<Project[]> {
+  // const result = await api.projects.list.query();
+  const { data: projectsData, statusCode } = await api.projects.list.query();
+  if (statusCode !== 200) {
+    return [];
+  }
+
+  return projectsData.items;
+}
+
+export default async function Home() {
+  const [featuredUser, projects] = await Promise.all([
+    getFeaturedUser(),
+    getProjects(),
+  ]);
+
   return (
     <div className={styles.page}>
       <main className={styles.main}>
@@ -31,6 +60,34 @@ export default function Home() {
           height={38}
           priority
         />
+        {featuredUser && (
+          <section className={styles.description}>
+            <p>
+              <strong>Featured user (server api):</strong> {featuredUser.name} —{" "}
+              {featuredUser.title}
+            </p>
+            <p>Served by calling the Fastify handler directly (no HTTP hop).</p>
+          </section>
+        )}
+        {projects.length > 0 && (
+          <section className={styles.projects}>
+            <h2>Active projects</h2>
+            <ul>
+              {projects.map((project) => (
+                <li key={project.id}>
+                  <span>{project.name}</span>
+                  <span className={styles[`status${project.status}`]}>
+                    {project.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p>
+              These entries come from the same Fastify router but are rendered
+              via the server API client—no HTTP hop required.
+            </p>
+          </section>
+        )}
         <ol>
           <li>
             Get started by editing <code>apps/web/app/page.tsx</code>

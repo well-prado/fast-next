@@ -11,10 +11,15 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@fast-next/fastify-app-factory": "workspace:*",
+    "@fast-next/fastify-next-adapter": "workspace:*",
+    "@fast-next/fastify-server-caller": "workspace:*",
+    "@fast-next/fastify-zod-router": "workspace:*",
     "@repo/ui": "workspace:*",
-    "next": "^16.0.0",
+    "next": "^16.0.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
@@ -22,6 +27,7 @@
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
+    "fastify": "^5.0.0",
     "eslint": "^9.39.1",
     "typescript": "5.9.2"
   }

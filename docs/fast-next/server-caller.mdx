@@ -1,0 +1,105 @@
+# Server Caller Guide
+
+`@fast-next/fastify-server-caller` lets you execute Fastify handlers directly—perfect for Server Components, background jobs, and tests. Think of it as the Igniter.js server caller implemented for this stack.
+
+## Constructing a caller
+
+```ts
+// apps/web/src/server/api.ts
+import { createServerCaller } from "@fast-next/fastify-server-caller";
+import { coreRouter } from "./routes";
+import { projectsRouter } from "./features/projects/routes";
+
+const mergedRouter = {
+  routes: [...coreRouter.routes, ...projectsRouter.routes],
+} as const;
+
+export const serverCaller = createServerCaller(mergedRouter);
+```
+
+If you have multiple routers, merge their route arrays before calling the factory:
+
+```ts
+const mergedRouter = {
+  routes: [...coreRouter.routes, ...projectsRouter.routes],
+} as const;
+
+export const serverCaller = createServerCaller(mergedRouter);
+```
+
+## Building an auto-generated API helper
+
+To make consumption ergonomic (similar to Igniter’s client), generate helpers straight from the route metadata:
+
+```ts
+export const api = {
+  call: serverCaller,
+  ...buildMethodApi(mergedRouter.routes, serverCaller),
+};
+
+// Usage
+await api.get.user.query({ params: { id: "1" } });
+await api.get.projects.query();
+```
+
+`buildMethodApi` walks every Fastify route and creates ergonomic chains (`api.get.<name>.query|mutate`). Because the structure is derived from router metadata, editors autocomplete the available endpoints automatically. Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available.
+
+## Making a call
+
+```ts
+const result = await api.get.user.query({
+  params: { id: "1" },
+});
+
+if (result.statusCode === 200) {
+  // result.body is typed as the 200 schema
+}
+```
+
+### Options
+
+```ts
+type RouteCallOptions = {
+  params?: Record<string, unknown>;
+  query?: Record<string, unknown>;
+  body?: unknown;
+  headers?: Record<string, string>;
+  context?: Record<string, unknown>;
+};
+```
+
+- `params`, `query`, `body`, `headers` must match the Zod schemas you defined. TypeScript will flag mismatches.
+- `context` lets you inject arbitrary data (e.g., authenticated user) onto `request.context`. Handlers can read it via `request.context`.
+
+### Return value
+
+```ts
+type RouteCallResult = {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: RouteGenericFromSchema["Reply"];
+};
+```
+
+If the handler calls `reply.send()`, that payload is returned. Otherwise, the return value of the handler function is used.
+
+## Error handling
+
+- Missing routes throw an explicit error: `[fastify-server-caller] Route not found: METHOD PATH`.
+- Exceptions inside handlers bubble up—just like they would over HTTP—so wrap calls in try/catch if you want custom error surfaces.
+
+## Testing with the caller
+
+Use the server caller in unit tests to exercise your Fastify handlers without hitting HTTP:
+
+```ts
+it("returns 404 when user missing", async () => {
+  const result = await api.get.user.query({
+    params: { id: "missing" },
+  });
+  expect(result.statusCode).toBe(404);
+  expect(result.body).toEqual({ error: "User not found" });
+});
+```
+
+This gives you fast, deterministic tests while sharing the exact same code paths that production uses.

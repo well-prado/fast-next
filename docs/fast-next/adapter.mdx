@@ -1,0 +1,60 @@
+# Next Adapter Guide
+
+`@fast-next/fastify-next-adapter` is the glue between Next.js App Router and Fastify. You normally only touch it in two places:
+
+1. The API catch-all route (`apps/web/app/api/[...fastify]/route.ts`).
+2. Tests or tooling where you might want to adapt custom requests.
+
+## Catch-all route setup
+
+```ts
+import type { NextRequest } from "next/server";
+import { handleNextRequest } from "@fast-next/fastify-next-adapter";
+import { getAppInstance } from "@/server/fastify-app";
+
+const handle = async (req: NextRequest) => {
+  const app = await getAppInstance();
+  return handleNextRequest(req, app);
+};
+
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const PATCH = handle;
+export const DELETE = handle;
+export const OPTIONS = handle;
+export const HEAD = handle;
+```
+
+## What the adapter does
+
+- **Header normalization** – Converts the immutable `Headers` object to the plain object Fastify expects, preserving multi-value headers like `Set-Cookie`.
+- **Body handling** – Buffers non-GET/HEAD bodies, supports binary payloads (returns `Uint8Array`), and avoids unnecessary allocations for empty bodies.
+- **Base path stripping** – Defaults to removing `/api` before calling Fastify so your routers stay unaware of Next’s file system routing.
+- **Error guard** – Wraps the entire operation in a `try/catch` and returns a 500 JSON error if Fastify throws before a response is built.
+- **Response conversion** – Maps Fastify’s `LightMyRequestResponse` back to `NextResponse`, including binary payloads and header arrays.
+
+## Customizing behavior
+
+`handleNextRequest(req, app, { apiBasePath?: string })`
+
+- Set `apiBasePath` to `"/v1"` if you mount the catch-all route elsewhere.
+- If you need logging, wrap the handler:
+
+```ts
+const handle = async (req: NextRequest) => {
+  const start = Date.now();
+  const response = await handleNextRequest(req, await getAppInstance());
+  console.log(req.method, req.url, response.status, Date.now() - start, "ms");
+  return response;
+};
+```
+
+## Testing ideas
+
+Because the adapter ultimately uses `fastify.inject`, you can:
+
+- Write integration tests that instantiate Fastify via `getFastifyApp()` and call `handleNextRequest` with a mocked `NextRequest`.
+- Snapshot the resulting `NextResponse` to ensure headers/body conversions stay stable.
+
+For most features you don’t need to touch the adapter—just keep this file in mind if you add middleware or logging later.

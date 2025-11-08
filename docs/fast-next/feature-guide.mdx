@@ -1,0 +1,110 @@
+# Building Your First Feature
+
+Walk through this recipe to add a new “projects” feature that exposes Fastify routes, serves them through Next.js, and consumes them directly on the server.
+
+## 1. Define schemas and handlers
+
+Create `apps/web/src/server/features/projects/routes.ts`:
+
+```ts
+import { createRouter } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+const projectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["draft", "active", "archived"]),
+});
+
+const projects = [
+  { id: "p1", name: "DX Overhaul", status: "active" },
+  { id: "p2", name: "AI SDK", status: "draft" },
+] as const;
+
+export const projectsRouter = createRouter()
+  .get("/projects", {
+    schema: {
+      response: z.object({
+        items: z.array(projectSchema),
+      }),
+    },
+    handler: async () => ({ items: projects }),
+  })
+  .get("/projects/:id", {
+    schema: {
+      params: z.object({ id: z.string() }),
+      response: {
+        200: projectSchema,
+        404: z.object({ error: z.string() }),
+      },
+    },
+    handler: async ({ params }, reply) => {
+      const project = projects.find((p) => p.id === params.id);
+      if (!project) {
+        reply.code(404);
+        return { error: "Project not found" };
+      }
+      return project;
+    },
+  })
+  .build();
+```
+
+## 2. Register the router
+
+Open `apps/web/src/server/routes/index.ts` and import/register the feature:
+
+```ts
+import { projectsRouter } from "../features/projects/routes";
+
+export async function registerCoreRoutes(app: FastifyInstance) {
+  await coreRouter.register(app);
+  await projectsRouter.register(app, { prefix: "/v1" });
+}
+```
+
+Use `prefix` when you need a scoped namespace.
+
+## 3. Consume via HTTP
+
+No extra work—`/api/v1/projects` is now live because the Next adapter forwards every request to Fastify. Hit it with cURL or your favorite REST client.
+
+## 4. Consume via server caller
+
+Export the built router (as above) and construct a caller + a typed helper:
+
+```ts
+// apps/web/src/server/api.ts
+import { createServerCaller } from "@fast-next/fastify-server-caller";
+import { coreRouter } from "./routes";
+import { projectsRouter } from "./features/projects/routes";
+
+const mergedRouter = {
+  routes: [...coreRouter.routes, ...projectsRouter.routes],
+} as const;
+
+export const serverCaller = createServerCaller(mergedRouter);
+export const api = {
+  call: serverCaller,
+  ...buildMethodApi(mergedRouter.routes, serverCaller),
+};
+```
+
+Now you can fetch projects in any Server Component:
+
+```ts
+const { body } = await api.get.projects.query();
+```
+
+## 5. Validate end-to-end
+
+```bash
+pnpm --filter web dev
+curl http://localhost:3000/api/projects
+curl http://localhost:3000/api/v1/projects/p2
+pnpm --filter web check-types
+```
+
+That’s it—routes defined once, available everywhere.
+
+> **Tip:** Keep Zod schemas in separate `schemas.ts` files when they’re shared between routers, forms, or clients. The router simply reuses the definitions.
