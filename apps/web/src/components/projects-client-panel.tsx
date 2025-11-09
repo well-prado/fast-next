@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
 import { api } from "@/client/api";
 import styles from "./projects-client-panel.module.css";
 
@@ -13,30 +14,64 @@ const STATUS_OPTIONS = [
 
 export function ProjectsClientPanel() {
   const [projectName, setProjectName] = useState("");
-  const [status, setStatus] = useState<(typeof STATUS_OPTIONS)[number]["value"]>(
-    "draft"
-  );
+  const [status, setStatus] =
+    useState<(typeof STATUS_OPTIONS)[number]["value"]>("draft");
 
   const query = api.projects.list.useQuery({
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const mutation = api.projects.create.useMutation({
     invalidate: { resource: "projects" },
   });
 
-  const projects = useMemo(() => query.response?.data?.items ?? [], [
+  useEffect(() => {
+    console.log("[projects query] state", {
+      status: query.status,
+      isLoading: query.isLoading,
+      isFetching: query.isFetching,
+      items: query.response?.data?.items ?? [],
+      error: query.error,
+    });
+  }, [
+    query.status,
+    query.isLoading,
+    query.isFetching,
     query.response,
+    query.error,
   ]);
+
+  useEffect(() => {
+    console.log("[projects mutation] state", {
+      status: mutation.status,
+      isPending: mutation.isPending,
+      error: mutation.error,
+      data: mutation.data,
+    });
+  }, [mutation.status, mutation.isPending, mutation.error, mutation.data]);
+
+  const projects = useMemo(
+    () => query.response?.data?.items ?? [],
+    [query.response]
+  );
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    console.log("[projects mutation] submitting", {
+      projectName,
+      status,
+      existing: projects,
+    });
     mutation.mutate({
       body: {
         name: projectName || `Client project ${projects.length + 1}`,
         status,
       },
     });
+    console.log(
+      "[projects mutation] mutate called, pending?",
+      mutation.isPending
+    );
     setProjectName("");
   };
 
@@ -48,7 +83,11 @@ export function ProjectsClientPanel() {
           <p>Browser API with TanStack-style hooks.</p>
         </div>
         <div className={styles.actions}>
-          <button type="button" onClick={() => query.refetch()} disabled={query.isFetching}>
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+          >
             Refresh
           </button>
         </div>
@@ -83,7 +122,9 @@ export function ProjectsClientPanel() {
         <select
           value={status}
           onChange={(event) =>
-            setStatus(event.target.value as (typeof STATUS_OPTIONS)[number]["value"])
+            setStatus(
+              event.target.value as (typeof STATUS_OPTIONS)[number]["value"]
+            )
           }
           aria-label="Project status"
         >

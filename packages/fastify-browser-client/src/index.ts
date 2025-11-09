@@ -216,6 +216,13 @@ function useRouteQuery<Route extends FastifyRouteDefinition, TSelected = Operati
   }, [enabled, execute]);
 
   useEffect(() => {
+    if (!enabled) return;
+    if (state.status === "idle") {
+      execute();
+    }
+  }, [enabled, state.status, execute]);
+
+  useEffect(() => {
     if (!refetchOnWindowFocus || typeof window === "undefined") {
       return undefined;
     }
