@@ -19,6 +19,8 @@ Options:
   --app <path>       Relative path to the Next.js app directory (default: app)
   --server <path>    Relative path to the server folder (default: src/server)
   --api <path>       Relative path to the API catch-all folder (default: <app>/api/[...fastify])
+  --orm <none|prisma|drizzle> Select ORM integration (default: prompt)
+  --db <sqlite|postgres|mysql> Select database when ORM is enabled
   --install <pm>     Install dependencies with pnpm|npm|yarn|bun|auto|skip (default: prompt in TTY)
   --with-queue       Include BullMQ queue scaffolding
   --with-cache <provider> Include cache service (memory|redis|upstash)
