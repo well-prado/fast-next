@@ -11,7 +11,9 @@ const HELP = `create-fast-next
 Usage:
   create-fast-next init [projectDir] [options]
   create-fast-next feature <name> [options]
-  create-fast-next queue <start|status> [options]
+  create-fast-next queue <start|status|generate> [options]
+  create-fast-next cache <clear|stats> [options]
+  create-fast-next mcp <start|status|tool> [options]
 
 Options:
   --app <path>       Relative path to the Next.js app directory (default: app)
@@ -83,6 +85,10 @@ async function main() {
       await runFeature(args);
     } else if (rawCommand === "queue") {
       await runQueueCommand(args);
+    } else if (rawCommand === "cache") {
+      await runCacheCommand(args);
+    } else if (rawCommand === "mcp") {
+      await runMcpCommand(args);
     } else {
       console.error(`Unknown command: ${rawCommand}\n`);
       console.log(HELP);
@@ -254,15 +260,81 @@ async function runQueueCommand(options) {
   const entry = options.entry ?? path.join("src", "server", "workers", "index.ts");
   const entryAbs = path.join(projectRoot, entry);
   const packageManager = detectPackageManager(projectRoot) ?? "pnpm";
+  const serverDir = options.server ?? path.join("src", "server");
+  const redisUrl = options.redis ?? process.env.REDIS_URL ?? undefined;
 
   if (action === "start") {
     const runner = getPackageRunner(packageManager, ["exec", "tsx", entryAbs]);
     console.log(`Starting queue workers via ${packageManager} (${entry})...`);
     await spawnInteractive(runner.bin, runner.args, projectRoot);
   } else if (action === "status") {
-    console.log("Status command not yet implemented. Manually inspect BullMQ dashboards or Redis stats.");
+    await printQueueStats({ redisUrl, projectRoot, serverDir });
+  } else if (action === "generate") {
+    if (!options._[1]) {
+      throw new Error("Queue name required: create-fast-next queue generate <name>");
+    }
+    await scaffoldCustomQueue({ projectRoot, name: options._[1], serverDir, force: Boolean(options.force) });
   } else {
-    throw new Error(`Unknown queue action '${action}'. Use 'start' or 'status'.`);
+    throw new Error(`Unknown queue action '${action}'. Use 'start', 'status', or 'generate'.`);
+  }
+}
+
+async function runCacheCommand(options) {
+  const action = options._[0];
+  if (!action) {
+    throw new Error("cache command requires an action: clear|stats");
+  }
+  const client = await createRedisClient(options.redis);
+  if (!client) {
+    console.error("Redis client unavailable. Set REDIS_HOST/PORT or pass --redis.");
+    return;
+  }
+
+  if (action === "clear") {
+    const key = options._[1];
+    if (!key) {
+      throw new Error("cache clear requires a key argument");
+    }
+    await client.del(key);
+    console.log(`Deleted cache key '${key}'.`);
+  } else if (action === "stats") {
+    const size = await client.dbsize();
+    const info = await client.info("memory");
+    console.log(`Cache entries: ${size}`);
+    console.log(info);
+  } else {
+    throw new Error(`Unknown cache action '${action}'. Use 'clear' or 'stats'.`);
+  }
+
+  await client.quit();
+}
+
+async function runMcpCommand(options) {
+  const action = options._[0];
+  if (!action) {
+    throw new Error("mcp command requires an action: start|status|tool");
+  }
+  const projectRoot = path.resolve(process.cwd(), options.dir ?? ".");
+  const entry = options.entry ?? path.join("src", "server", "services", "mcp", "server.ts");
+  const entryAbs = path.join(projectRoot, entry);
+  const packageManager = detectPackageManager(projectRoot) ?? "pnpm";
+  const toolsDir = path.join(projectRoot, options.tools ?? path.join("src", "server", "features", "mcp", "tools"));
+  const indexPath = path.join(toolsDir, "index.ts");
+
+  if (action === "start") {
+    const runner = getPackageRunner(packageManager, ["exec", "tsx", entryAbs]);
+    console.log(`Starting MCP server via ${packageManager} (${entry})...`);
+    await spawnInteractive(runner.bin, runner.args, projectRoot);
+  } else if (action === "status") {
+    await listMcpTools(indexPath);
+  } else if (action === "tool") {
+    const name = options._[1];
+    if (!name) {
+      throw new Error("mcp tool command requires a tool name");
+    }
+    await scaffoldMcpTool({ toolsDir, indexPath, name, force: Boolean(options.force) });
+  } else {
+    throw new Error(`Unknown mcp action '${action}'. Use 'start', 'status', or 'tool <name>'.`);
   }
 }
 
@@ -766,6 +838,88 @@ async function scaffoldCacheTemplate({ serverDirAbs, force, provider }) {
   console.log(`[cache] ${provider} cache service created`);
 }
 
+async function scaffoldCustomQueue({ projectRoot, name, serverDir, force }) {
+  const serverDirAbs = path.join(projectRoot, serverDir);
+  const queuesDir = path.join(serverDirAbs, "queues");
+  const workersDir = path.join(serverDirAbs, "workers");
+  await ensureDir(queuesDir);
+  await ensureDir(workersDir);
+  const queueFile = path.join(queuesDir, `${name}.queue.ts`);
+  const workerFile = path.join(workersDir, `${name}.worker.ts`);
+  await writeFile(queueFile, getCustomQueueTemplate(name), force);
+  await writeFile(workerFile, getCustomWorkerTemplate(name), force);
+  console.log(`[queue] custom queue '${name}' scaffolded`);
+}
+
+async function printQueueStats({ redisUrl, projectRoot, serverDir }) {
+  try {
+    const { Queue } = await import("bullmq");
+    const IORedis = (await import("ioredis")).default;
+    const connection = redisUrl ? new IORedis(redisUrl) : new IORedis({
+      host: process.env.REDIS_HOST ?? "127.0.0.1",
+      port: Number(process.env.REDIS_PORT ?? 6379),
+      password: process.env.REDIS_PASSWORD || undefined,
+    });
+
+    const queuesDir = path.join(projectRoot, serverDir, "queues");
+    const queueNames = await listQueuesFromDir(queuesDir);
+    if (!queueNames.length) {
+      console.log(`No queues found in ${queuesDir}.`);
+      return;
+    }
+
+    console.log("Queue status:\n");
+    for (const name of queueNames) {
+      const queue = new Queue(name, { connection });
+      const counts = await queue.getJobCounts(
+        "waiting",
+        "active",
+        "completed",
+        "failed",
+        "delayed"
+      );
+      console.log(`${name}:`);
+      Object.entries(counts).forEach(([key, value]) => {
+        console.log(`  ${key}: ${value}`);
+      });
+      console.log("");
+      await queue.close();
+    }
+
+    await connection.quit();
+  } catch (error) {
+    console.error("Failed to fetch queue status. Ensure bullmq/ioredis are installed.", error.message ?? error);
+  }
+}
+
+async function listQueuesFromDir(dir) {
+  try {
+    const entries = await fs.readdir(dir);
+    return entries
+      .filter((file) => file.endsWith(".queue.ts") || file.endsWith(".queue.js"))
+      .map((file) => file.replace(/\.queue\.(ts|js)$/g, ""));
+  } catch {
+    return [];
+  }
+}
+
+async function createRedisClient(url) {
+  try {
+    const IORedis = (await import("ioredis")).default;
+    if (url) {
+      return new IORedis(url);
+    }
+    return new IORedis({
+      host: process.env.REDIS_HOST ?? "127.0.0.1",
+      port: Number(process.env.REDIS_PORT ?? 6379),
+      password: process.env.REDIS_PASSWORD || undefined,
+    });
+  } catch (error) {
+    console.error("ioredis is required for this command. Install it in the current project.");
+    return null;
+  }
+}
+
 async function scaffoldMcpTemplate({ projectRoot, serverDirAbs, force }) {
   const mcpServiceDir = path.join(serverDirAbs, "services", "mcp");
   const mcpFeatureDir = path.join(serverDirAbs, "features", "mcp");
@@ -788,9 +942,17 @@ async function scaffoldMcpTemplate({ projectRoot, serverDirAbs, force }) {
 
   await writeFile(
     path.join(toolsDir, "ping.tool.ts"),
-    getMcpToolTemplate(),
+    getMcpToolTemplate("ping"),
     force
   );
+
+  const toolsIndexFile = path.join(toolsDir, "index.ts");
+  await writeFile(
+    toolsIndexFile,
+    getMcpToolsIndexTemplate(),
+    force
+  );
+  await linkMcpTool(toolsIndexFile, "ping");
 
   const routesFile = path.join(mcpFeatureDir, "routes.ts");
   await writeFile(routesFile, getMcpRoutesTemplate(), force);
@@ -839,6 +1001,15 @@ async function scaffoldDockerTemplate({ projectRoot, force }) {
   });
 
   console.log("[docker] docker-compose.yml, Dockerfile, Dockerfile.mcp created");
+}
+
+async function scaffoldMcpTool({ toolsDir, indexPath, name, force }) {
+  await ensureDir(toolsDir);
+  await ensureDir(path.dirname(indexPath));
+  const toolFile = path.join(toolsDir, `${name}.tool.ts`);
+  await writeFile(toolFile, getMcpToolTemplate(name), force);
+  await linkMcpTool(indexPath, name);
+  console.log(`[mcp] tool '${name}' created at ${path.relative(process.cwd(), toolFile)}`);
 }
 
 function getCacheServiceTemplate(provider) {
@@ -1118,6 +1289,33 @@ console.log("[workers] email worker registered");
 `;
 }
 
+function getCustomQueueTemplate(name) {
+  const pascal = toPascalCase(name);
+  return `import { queueService } from "../services/queue.service";
+
+export type ${pascal}Payload = Record<string, unknown>;
+
+export const ${name}Queue = queueService.registerQueue<${pascal}Payload>("${name}");
+
+export async function enqueue${pascal}(jobName: string, payload: ${pascal}Payload) {
+  return ${name}Queue.add(jobName, payload);
+}
+`;
+}
+
+function getCustomWorkerTemplate(name) {
+  const pascal = toPascalCase(name);
+  return `import type { Job } from "bullmq";
+import { queueService } from "../services/queue.service";
+import { ${name}Queue, type ${pascal}Payload } from "../queues/${name}.queue";
+
+queueService.registerWorker<${pascal}Payload>(${name}Queue.name, async (job: Job<${pascal}Payload>) => {
+  console.log(`[${name} worker] received job ${job.name}`, job.data);
+  return { handledAt: Date.now() };
+});
+`;
+}
+
 function getMcpServiceTemplate() {
   return `import { MCPServer } from "@modelcontextprotocol/sdk";
 
@@ -1180,28 +1378,35 @@ void mcpServer.start().catch((error) => {
 `;
 }
 
-function getMcpToolTemplate() {
+function getMcpToolTemplate(name = "ping") {
+  const description = name === "ping" ? "Return a pong response to test connectivity" : `Tool '${name}' generated via CLI`;
   return `import { mcpServer } from "../../services/mcp/mcp.service";
 
 mcpServer.registerTool({
-  name: "ping",
-  description: "Return a pong response to test connectivity",
+  name: "${name}",
+  description: "${description}",
   inputSchema: {
     type: "object",
     properties: {
-      message: {
-        type: "string",
-        description: "Optional message to echo back",
+      payload: {
+        type: "object",
+        description: "Tool-specific payload",
       },
     },
   },
-  handler: async (input: { message?: string }) => {
+  handler: async (input: { payload?: Record<string, unknown> }) => {
     return {
-      response: input?.message ?? "pong",
+      tool: "${name}",
+      echo: input?.payload ?? null,
       timestamp: Date.now(),
     };
   },
 });
+`;
+}
+
+function getMcpToolsIndexTemplate() {
+  return `// FAST_NEXT_MCP_TOOL_IMPORTS
 `;
 }
 
@@ -1379,6 +1584,44 @@ EXPOSE 3001
 
 CMD ["pnpm", "exec", "tsx", "src/server/services/mcp/server.ts"]
 `;
+}
+
+async function linkMcpTool(indexPath, name) {
+  const marker = "// FAST_NEXT_MCP_TOOL_IMPORTS";
+  let content;
+  if (await fileExists(indexPath)) {
+    content = await fs.readFile(indexPath, "utf8");
+  } else {
+    content = getMcpToolsIndexTemplate();
+  }
+
+  if (content.includes(`"./${name}.tool"`)) {
+    await fs.writeFile(indexPath, content, "utf8");
+    return;
+  }
+
+  if (!content.includes(marker)) {
+    content = `${marker}\n${content}`;
+  }
+
+  const importLine = `import "./${name}.tool";\n`;
+  const next = content.replace(marker, `${importLine}${marker}`);
+  await fs.writeFile(indexPath, next, "utf8");
+}
+
+async function listMcpTools(indexPath) {
+  if (!(await fileExists(indexPath))) {
+    console.log("No MCP tools registered yet.");
+    return;
+  }
+  const content = await fs.readFile(indexPath, "utf8");
+  const matches = [...content.matchAll(/import \"\.\/(.+?)\.tool\";/g)].map((match) => match[1]);
+  if (!matches.length) {
+    console.log("No MCP tools registered yet.");
+    return;
+  }
+  console.log("Registered MCP tools:\n");
+  matches.forEach((tool) => console.log(`- ${tool}`));
 }
 
 function getPackageRunner(manager, execArgs) {

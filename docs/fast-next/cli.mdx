@@ -107,12 +107,37 @@ Options:
 
 ```
 pnpm dlx create-fast-next queue start --entry src/server/workers/index.ts
-pnpm dlx create-fast-next queue status
+pnpm dlx create-fast-next queue status --server src/server --redis redis://localhost:6379
+pnpm dlx create-fast-next queue generate invoices
 ```
 
 - `start` (default) spawns `pnpm exec tsx <entry>` (respecting your package manager) so you can keep workers running alongside `pnpm dev`.
-- `status` currently prints a reminder to inspect BullMQ dashboards; future releases can integrate Redis metrics.
-- `--dir` and `--entry` mirror other commands so you can target different folders.
+- `status` inspects `src/server/queues`, infers queue names, and prints BullMQ counts (waiting/active/completed/failed/delayed) by connecting to Redis. Use `--redis` to override the connection string.
+- `generate <name>` scaffolds a matching queue + worker file so you can bootstrap new processors quickly.
+- `--dir`, `--server`, and `--entry` mirror other commands so you can target different folders.
+
+### `cache`
+
+```
+pnpm dlx create-fast-next cache stats --redis redis://localhost:6379
+pnpm dlx create-fast-next cache clear user:123
+```
+
+- `stats` connects to Redis (env or `--redis`) and prints DB size plus memory info.
+- `clear <key>` deletes a specific cache key.
+- Additional providers will arrive later; for now the command focuses on Redis-compatible stores.
+
+### `mcp`
+
+```
+pnpm dlx create-fast-next mcp start --entry src/server/services/mcp/server.ts
+pnpm dlx create-fast-next mcp status
+pnpm dlx create-fast-next mcp tool query-db
+```
+
+- `start` launches the MCP server entrypoint via your detected package manager.
+- `status` lists every registered MCP tool by inspecting `src/server/features/mcp/tools/index.ts`.
+- `tool <name>` scaffolds a new tool file and automatically adds it to the tools index so the server registers it on startup.
 
 ## Manual usage inside the monorepo
 
