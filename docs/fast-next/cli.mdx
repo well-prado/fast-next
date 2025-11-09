@@ -44,6 +44,9 @@ Options:
 | `--install <pm>` | Install deps with `pnpm`, `npm`, `yarn`, `bun`, `auto`, or `skip`. | Prompt in TTY / `skip` in CI |
 | `--yes` | Skip interactive prompts (use defaults). | `false` |
 | `--with-queue` | Include BullMQ queue scaffolding (services, queues, workers). | Prompted |
+| `--with-cache <provider>` | Include cache service (`memory`, `redis`, or `upstash`). | Prompted |
+| `--with-mcp` | Add MCP server, sample tool, and Fastify routes. | Prompted |
+| `--with-docker` | Generate `docker-compose.yml`, `.dockerignore`, and `.env.example`. | Prompted |
 
 When `--with-queue` is enabled, the CLI generates:
 
@@ -52,6 +55,31 @@ When `--with-queue` is enabled, the CLI generates:
 - `src/server/workers/email.worker.ts` + `workers/index.ts` – ready-to-run worker bootstrap.
 
 It also adds `bullmq`/`ioredis` to your dependencies and reminds you to configure `REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD`.
+
+When `--with-cache <provider>` is supplied, the CLI drops `src/server/services/cache/cache.service.ts` with:
+
+- A shared `CacheService` wrapper + `wrap()` helper.
+- Provider implementations for memory (always) plus the requested provider (Redis with `ioredis`, or Upstash with `@upstash/redis`).
+- Default `cache` instance that respects the `CACHE_PROVIDER` environment variable.
+
+If you choose `redis` or `upstash`, the necessary dependencies are added automatically; otherwise the memory provider is ready for local testing with zero config.
+
+When `--with-mcp` is enabled, you get:
+
+- `src/server/services/mcp/mcp.service.ts` – lightweight MCP server wrapper + registry.
+- `src/server/services/mcp/server.ts` – entrypoint (`pnpm exec tsx ...`) to run the MCP server independently.
+- `src/server/features/mcp/tools/ping.tool.ts` – sample tool registration.
+- `src/server/features/mcp/routes.ts` – Fastify routes that list available tools.
+
+The CLI automatically wires the routes into `serverRoutes` and adds `@modelcontextprotocol/sdk` to your dependencies.
+
+When `--with-docker` is passed, the CLI creates:
+
+- `docker-compose.yml` with app, Postgres, Redis, and MCP services.
+- `.dockerignore` seeded with common build artifacts.
+- `.env.example` describing the environment variables referenced by the compose file.
+
+Update `.env` and `Dockerfile` as needed before running `docker compose up`.
 
 ### `feature`
 
@@ -72,6 +100,17 @@ Options:
 | `--force` | Overwrite the feature file if it already exists. | `false` |
 
 > Tip: run `pnpm dlx create-fast-next feature analytics` as many times as you like—your `server/routes/index.ts` file will stay tidy thanks to the FAST_NEXT markers.
+
+### `queue`
+
+```
+pnpm dlx create-fast-next queue start --entry src/server/workers/index.ts
+pnpm dlx create-fast-next queue status
+```
+
+- `start` (default) spawns `pnpm exec tsx <entry>` (respecting your package manager) so you can keep workers running alongside `pnpm dev`.
+- `status` currently prints a reminder to inspect BullMQ dashboards; future releases can integrate Redis metrics.
+- `--dir` and `--entry` mirror other commands so you can target different folders.
 
 ## Manual usage inside the monorepo
 

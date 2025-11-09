@@ -21,7 +21,7 @@ yarn create fast-next init .
 bunx create-fast-next init .
 ```
 
-Pass `--install auto` (or `--install pnpm|npm|yarn|bun`) to have the CLI add dependencies. Need BullMQ scaffolding? Append `--with-queue`. Need another domain slice later? Swap `init` for `feature <name>` in any of the commands above, e.g. `npx create-fast-next feature projects`.
+Pass `--install auto` (or `--install pnpm|npm|yarn|bun`) to have the CLI add dependencies. Need BullMQ scaffolding? Append `--with-queue`. Need caching? Use `--with-cache redis|upstash|memory`. Want MCP tooling or Docker compose? Use `--with-mcp` / `--with-docker`. Need another domain slice later? Swap `init` for `feature <name>` in any of the commands above, e.g. `npx create-fast-next feature projects`.
 
 See the [CLI reference](./cli.mdx) for all options.
 

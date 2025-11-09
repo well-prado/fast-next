@@ -193,7 +193,8 @@ Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available. Either
 
 - `pnpm dlx create-fast-next init .` scaffolds the catch-all API route plus `src/server/{fastify-app,routes,api}.ts`.
 - `pnpm dlx create-fast-next feature analytics` drops a new `src/server/features/analytics/routes.ts` file and wires it into the master `serverRoutes` array.
-- Pass `--app`, `--server`, or `--api` flags if your project structure differs. See `docs/fast-next/cli.mdx` for the full option list.
+- Add `--install auto`, `--with-queue`, `--with-cache redis|upstash|memory`, `--with-mcp`, or `--with-docker` to tailor the scaffolded stack. Use `--app/--server/--api` to point at custom directories.
+- See `docs/fast-next/cli.mdx` for the full option list.
 
 ---
 

@@ -11,6 +11,7 @@ const HELP = `create-fast-next
 Usage:
   create-fast-next init [projectDir] [options]
   create-fast-next feature <name> [options]
+  create-fast-next queue <start|status> [options]
 
 Options:
   --app <path>       Relative path to the Next.js app directory (default: app)
@@ -18,6 +19,9 @@ Options:
   --api <path>       Relative path to the API catch-all folder (default: <app>/api/[...fastify])
   --install <pm>     Install dependencies with pnpm|npm|yarn|bun|auto|skip (default: prompt in TTY)
   --with-queue       Include BullMQ queue scaffolding
+  --with-cache <provider> Include cache service (memory|redis|upstash)
+  --with-mcp         Include MCP server scaffolding
+  --with-docker      Include docker-compose template
   --force            Overwrite existing files when scaffolding
   --dir <path>       Base directory for feature scaffolding (default: .)
   --yes              Skip interactive prompts
@@ -38,23 +42,29 @@ const CORE_DEPENDENCIES = [
 ];
 
 const QUEUE_DEPENDENCIES = ["bullmq", "ioredis"];
+const CACHE_DEPENDENCIES = {
+  memory: [],
+  redis: ["ioredis"],
+  upstash: ["@upstash/redis"],
+};
+const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
 
 const INSTALL_COMMANDS = {
   pnpm: {
     bin: "pnpm",
-    args: ["add", ...CORE_DEPENDENCIES],
+    buildArgs: (deps) => ["add", ...deps],
   },
   npm: {
     bin: "npm",
-    args: ["install", ...CORE_DEPENDENCIES],
+    buildArgs: (deps) => ["install", ...deps],
   },
   yarn: {
     bin: "yarn",
-    args: ["add", ...CORE_DEPENDENCIES],
+    buildArgs: (deps) => ["add", ...deps],
   },
   bun: {
     bin: "bun",
-    args: ["add", ...CORE_DEPENDENCIES],
+    buildArgs: (deps) => ["add", ...deps],
   },
 };
 
@@ -71,6 +81,8 @@ async function main() {
       await runInit(args);
     } else if (rawCommand === "feature") {
       await runFeature(args);
+    } else if (rawCommand === "queue") {
+      await runQueueCommand(args);
     } else {
       console.error(`Unknown command: ${rawCommand}\n`);
       console.log(HELP);
@@ -122,6 +134,19 @@ async function runInit(options) {
     "Add BullMQ queue scaffolding?",
     false
   );
+  const cacheOption = await resolveCacheOption(options["with-cache"], prompter);
+  const mcpEnabled = await resolveBooleanOption(
+    options["with-mcp"],
+    prompter,
+    "Add MCP server scaffolding?",
+    false
+  );
+  const dockerEnabled = await resolveBooleanOption(
+    options["with-docker"],
+    prompter,
+    "Add docker-compose template?",
+    false
+  );
   const installChoice = await resolveInstallChoice(options.install, prompter, projectRoot);
   prompter.close();
 
@@ -160,9 +185,29 @@ async function runInit(options) {
     );
   }
 
+  if (cacheOption.enabled) {
+    await scaffoldCacheTemplate({ projectRoot, serverDirAbs, force, provider: cacheOption.provider });
+    const deps = CACHE_DEPENDENCIES[cacheOption.provider] ?? [];
+    deps.forEach((dep) => dependencySet.add(dep));
+    postInitNotes.push(
+      `Cache provider '${cacheOption.provider}' scaffolded. Configure env vars (see src/server/services/cache/cache.service.ts).`
+    );
+  }
+
+  if (mcpEnabled) {
+    await scaffoldMcpTemplate({ projectRoot, serverDirAbs, force });
+    MCP_DEPENDENCIES.forEach((dep) => dependencySet.add(dep));
+    postInitNotes.push("MCP server files created under services/mcp. Start it with 'pnpm exec tsx src/server/services/mcp/server.ts'.");
+  }
+
+  if (dockerEnabled) {
+    await scaffoldDockerTemplate({ projectRoot, force });
+    postInitNotes.push("docker-compose.yml generated. Update .env before running 'docker compose up'.");
+  }
+
   if (installChoice && installChoice !== "skip") {
     await ensurePackageJsonDeps(projectRoot, Array.from(dependencySet));
-    await installDependencies(installChoice, projectRoot);
+    await installDependencies(installChoice, projectRoot, Array.from(dependencySet));
   } else {
     console.log("\nDependencies to install:");
     console.log("  " + Array.from(dependencySet).join(" "));
@@ -201,6 +246,24 @@ async function runFeature(options) {
   await writeFile(testFile, getFeatureTestTemplate(featureName), false);
   await injectFeatureImport(routesFile, featureName);
   console.log(`Feature '${featureName}' scaffolded (schemas, service, routes, test).`);
+}
+
+async function runQueueCommand(options) {
+  const action = options._[0] ?? "start";
+  const projectRoot = path.resolve(process.cwd(), options.dir ?? ".");
+  const entry = options.entry ?? path.join("src", "server", "workers", "index.ts");
+  const entryAbs = path.join(projectRoot, entry);
+  const packageManager = detectPackageManager(projectRoot) ?? "pnpm";
+
+  if (action === "start") {
+    const runner = getPackageRunner(packageManager, ["exec", "tsx", entryAbs]);
+    console.log(`Starting queue workers via ${packageManager} (${entry})...`);
+    await spawnInteractive(runner.bin, runner.args, projectRoot);
+  } else if (action === "status") {
+    console.log("Status command not yet implemented. Manually inspect BullMQ dashboards or Redis stats.");
+  } else {
+    throw new Error(`Unknown queue action '${action}'. Use 'start' or 'status'.`);
+  }
 }
 
 async function writeFile(filePath, content, force) {
@@ -545,6 +608,41 @@ async function resolveBooleanOption(value, prompter, question, defaultValue) {
   return /^y(es)?$/i.test(answer.trim());
 }
 
+async function resolveCacheOption(value, prompter) {
+  const valid = ["memory", "redis", "upstash", "none", "false"];
+  if (typeof value === "string") {
+    const normalized = value.toLowerCase();
+    if (normalized === "false" || normalized === "none") {
+      return { enabled: false, provider: "memory" };
+    }
+    if (valid.includes(normalized)) {
+      if (normalized === "none") {
+        return { enabled: false, provider: "memory" };
+      }
+      return { enabled: true, provider: normalized };
+    }
+  } else if (typeof value === "boolean") {
+    return { enabled: value, provider: "memory" };
+  }
+
+  if (!prompter.enabled) {
+    return { enabled: false, provider: "memory" };
+  }
+
+  const answer = await prompter.ask(
+    "Add cache service? (memory/redis/upstash/none)",
+    "none"
+  );
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === "none" || normalized === "no" || normalized === "n") {
+    return { enabled: false, provider: "memory" };
+  }
+  if (normalized === "redis" || normalized === "upstash" || normalized === "memory") {
+    return { enabled: true, provider: normalized };
+  }
+  return { enabled: false, provider: "memory" };
+}
+
 function detectPackageManager(projectRoot) {
   const checks = [
     { file: "pnpm-lock.yaml", manager: "pnpm" },
@@ -593,27 +691,14 @@ async function ensurePackageJsonDeps(projectRoot, deps) {
   }
 }
 
-async function installDependencies(manager, cwd) {
+async function installDependencies(manager, cwd, deps) {
   const config = INSTALL_COMMANDS[manager];
   if (!config) {
     console.warn(`[warn] Unsupported package manager '${manager}', skipping install.`);
     return;
   }
   console.log(`\nInstalling dependencies with ${manager}...\n`);
-  await new Promise((resolve, reject) => {
-    const child = spawn(config.bin, config.args, {
-      cwd,
-      stdio: "inherit",
-    });
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`${config.bin} exited with code ${code}`));
-      }
-    });
-    child.on("error", reject);
-  });
+  await spawnInteractive(config.bin, config.buildArgs(deps), cwd);
 }
 
 async function scaffoldQueueTemplate({ projectRoot, serverDirAbs, force }) {
@@ -650,6 +735,232 @@ async function scaffoldQueueTemplate({ projectRoot, serverDirAbs, force }) {
   );
 
   console.log("[queue] BullMQ scaffolding created");
+}
+
+async function scaffoldCacheTemplate({ serverDirAbs, force, provider }) {
+  const cacheDir = path.join(serverDirAbs, "services", "cache");
+  await ensureDir(cacheDir);
+  const filePath = path.join(cacheDir, "cache.service.ts");
+  await writeFile(filePath, getCacheServiceTemplate(provider), force);
+  console.log(`[cache] ${provider} cache service created`);
+}
+
+async function scaffoldMcpTemplate({ projectRoot, serverDirAbs, force }) {
+  const mcpServiceDir = path.join(serverDirAbs, "services", "mcp");
+  const mcpFeatureDir = path.join(serverDirAbs, "features", "mcp");
+  const toolsDir = path.join(mcpFeatureDir, "tools");
+  await ensureDir(mcpServiceDir);
+  await ensureDir(mcpFeatureDir);
+  await ensureDir(toolsDir);
+
+  await writeFile(
+    path.join(mcpServiceDir, "mcp.service.ts"),
+    getMcpServiceTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(mcpServiceDir, "server.ts"),
+    getMcpServerEntryTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(toolsDir, "ping.tool.ts"),
+    getMcpToolTemplate(),
+    force
+  );
+
+  const routesFile = path.join(mcpFeatureDir, "routes.ts");
+  await writeFile(routesFile, getMcpRoutesTemplate(), force);
+
+  const masterRoutesFile = path.join(serverDirAbs, "routes", "index.ts");
+  await injectFeatureImport(masterRoutesFile, "mcp");
+
+  console.log("[mcp] MCP server scaffolding created");
+}
+
+async function scaffoldDockerTemplate({ projectRoot, force }) {
+  await writeFile(
+    path.join(projectRoot, "docker-compose.yml"),
+    getDockerComposeTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(projectRoot, ".dockerignore"),
+    getDockerIgnoreTemplate(),
+    false
+  );
+
+  const envExamplePath = path.join(projectRoot, ".env.example");
+  const envTemplate = getEnvExampleTemplate();
+  const exists = await fileExists(envExamplePath);
+  if (!exists) {
+    await fs.writeFile(envExamplePath, envTemplate, "utf8");
+    console.log("[docker] .env.example created");
+  }
+
+  console.log("[docker] docker-compose.yml created");
+}
+
+function getCacheServiceTemplate(provider) {
+  const imports = [];
+  if (provider === "redis") {
+    imports.push('import IORedis from "ioredis";');
+  }
+  if (provider === "upstash") {
+    imports.push('import { Redis as UpstashRedis } from "@upstash/redis";');
+  }
+
+  const redisProvider = `class RedisCacheProvider implements CacheProvider {
+  private client: IORedis;
+  constructor() {
+    this.client = new IORedis({
+      host: process.env.REDIS_HOST ?? "127.0.0.1",
+      port: Number(process.env.REDIS_PORT ?? 6379),
+      password: process.env.REDIS_PASSWORD || undefined,
+      keyPrefix: "fast-next:"
+    });
+  }
+
+  async get(key: string) {
+    const value = await this.client.get(key);
+    return value ? JSON.parse(value) : null;
+  }
+
+  async set(key: string, value: unknown, ttl?: number) {
+    const payload = JSON.stringify(value);
+    if (ttl) {
+      await this.client.setex(key, ttl, payload);
+    } else {
+      await this.client.set(key, payload);
+    }
+  }
+
+  async delete(key: string) {
+    await this.client.del(key);
+  }
+}`;
+
+  const upstashProvider = `class UpstashCacheProvider implements CacheProvider {
+  private client: UpstashRedis;
+  constructor() {
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (!url || !token) {
+      throw new Error("UPSTASH credentials are required when CACHE_PROVIDER=upstash");
+    }
+    this.client = new UpstashRedis({ url, token });
+  }
+
+  async get(key: string) {
+    const value = await this.client.get<string>(key);
+    return value ? JSON.parse(value) : null;
+  }
+
+  async set(key: string, value: unknown, ttl?: number) {
+    const payload = JSON.stringify(value);
+    if (ttl) {
+      await this.client.setex(key, ttl, payload);
+    } else {
+      await this.client.set(key, payload);
+    }
+  }
+
+  async delete(key: string) {
+    await this.client.del(key);
+  }
+}`;
+
+  const providerSwitch = `type CacheProviderName = "memory" | "redis" | "upstash";
+
+export function createCacheService(providerName: CacheProviderName = "${provider}") {
+  const resolved = (process.env.CACHE_PROVIDER ?? providerName) as CacheProviderName;
+  switch (resolved) {
+    case "redis":
+      return new CacheService(new RedisCacheProvider());
+    case "upstash":
+      return new CacheService(new UpstashCacheProvider());
+    default:
+      return new CacheService(new MemoryCacheProvider());
+  }
+}
+
+export const cache = createCacheService();
+`;
+
+  const providerClasses = [
+    `class MemoryCacheProvider implements CacheProvider {
+  private cache = new Map<string, { value: unknown; expiresAt?: number }>();
+
+  async get(key: string) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  async set(key: string, value: unknown, ttl?: number) {
+    this.cache.set(key, {
+      value,
+      expiresAt: ttl ? Date.now() + ttl * 1000 : undefined,
+    });
+  }
+
+  async delete(key: string) {
+    this.cache.delete(key);
+  }
+}`,
+  ];
+
+  if (provider === "redis") {
+    providerClasses.push(redisProvider);
+  }
+  if (provider === "upstash") {
+    providerClasses.push(upstashProvider);
+  }
+
+  return `${imports.join("\n")}
+
+export interface CacheProvider {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, ttl?: number): Promise<void>;
+  delete(key: string): Promise<void>;
+}
+
+export class CacheService {
+  constructor(private readonly provider: CacheProvider) {}
+
+  async get<T>(key: string) {
+    return this.provider.get<T>(key);
+  }
+
+  async set(key: string, value: unknown, ttl?: number) {
+    await this.provider.set(key, value, ttl);
+  }
+
+  async wrap<T>(key: string, fn: () => Promise<T>, ttl = 60) {
+    const cached = await this.provider.get<T>(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+    const fresh = await fn();
+    await this.provider.set(key, fresh, ttl);
+    return fresh;
+  }
+
+  async delete(key: string) {
+    await this.provider.delete(key);
+  }
+}
+
+${providerClasses.join("\n\n")}
+
+${providerSwitch}`;
 }
 
 function getQueueServiceTemplate() {
@@ -768,6 +1079,248 @@ function getQueueWorkerIndexTemplate() {
 
 console.log("[workers] email worker registered");
 `;
+}
+
+function getMcpServiceTemplate() {
+  return `import { MCPServer } from "@modelcontextprotocol/sdk";
+
+type ToolConfig = {
+  name: string;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+  handler: (input: unknown) => Promise<unknown>;
+};
+
+export class FastNextMcpServer {
+  private readonly server = new MCPServer({
+    name: "fast-next-mcp",
+    version: "0.1.0",
+    capabilities: {
+      tools: true,
+    },
+  });
+
+  private readonly tools = new Map<string, ToolConfig>();
+
+  registerTool(tool: ToolConfig) {
+    if (this.tools.has(tool.name)) {
+      return;
+    }
+    this.tools.set(tool.name, tool);
+    this.server.addTool({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      handler: tool.handler,
+    });
+  }
+
+  listTools() {
+    return Array.from(this.tools.values()).map(({ handler, ...meta }) => meta);
+  }
+
+  getTool(name: string) {
+    return this.tools.get(name);
+  }
+
+  async start(port = Number(process.env.MCP_PORT ?? 3001)) {
+    await this.server.listen(port);
+    console.log(`[mcp] server listening on port ${port}`);
+  }
+}
+
+export const mcpServer = new FastNextMcpServer();
+`;
+}
+
+function getMcpServerEntryTemplate() {
+  return `import { mcpServer } from "./mcp.service";
+import "../../features/mcp/tools/ping.tool";
+
+void mcpServer.start().catch((error) => {
+  console.error("[mcp] failed to start", error);
+});
+`;
+}
+
+function getMcpToolTemplate() {
+  return `import { mcpServer } from "../../services/mcp/mcp.service";
+
+mcpServer.registerTool({
+  name: "ping",
+  description: "Return a pong response to test connectivity",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description: "Optional message to echo back",
+      },
+    },
+  },
+  handler: async (input: { message?: string }) => {
+    return {
+      response: input?.message ?? "pong",
+      timestamp: Date.now(),
+    };
+  },
+});
+`;
+}
+
+function getMcpRoutesTemplate() {
+  return `import { createRoute, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+import { mcpServer } from "../../services/mcp/mcp.service";
+import "./tools/ping.tool";
+
+const listToolsSchema = {
+  response: z.object({
+    tools: z.array(
+      z.object({
+        name: z.string(),
+        description: z.string().optional(),
+      })
+    ),
+  }),
+} as const;
+
+export const McpRoutes = [
+  createRoute({
+    method: "GET",
+    path: "/mcp/tools",
+    resource: "mcp",
+    operation: "list",
+    schema: listToolsSchema,
+    handler: (async () => ({ tools: mcpServer.listTools() })) satisfies TypedRouteHandler<typeof listToolsSchema>,
+  }),
+] as const satisfies readonly FastifyRouteDefinition[];
+`;
+}
+
+function getDockerComposeTemplate() {
+  return `version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fast_next
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm exec tsx src/server/services/mcp/server.ts
+    environment:
+      MCP_PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+`;
+}
+
+function getDockerIgnoreTemplate() {
+  return `node_modules
+.turbo
+.next
+dist
+*.log
+.env
+`;}
+
+function getEnvExampleTemplate() {
+  return `# App
+NODE_ENV=development
+PORT=3000
+
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/fast_next
+
+# Redis / Queue
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# Cache providers
+CACHE_PROVIDER=memory
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+
+# MCP server
+MCP_PORT=3001
+`;
+}
+
+function getPackageRunner(manager, execArgs) {
+  const trimmed = execArgs[0] === "exec" ? execArgs.slice(1) : execArgs;
+  switch (manager) {
+    case "pnpm":
+      return { bin: "pnpm", args: execArgs };
+    case "npm":
+      return { bin: "npm", args: ["exec", ...trimmed] };
+    case "yarn":
+      return { bin: "yarn", args: trimmed };
+    case "bun":
+      return { bin: "bun", args: ["x", ...trimmed] };
+    default:
+      return { bin: manager, args: execArgs };
+  }
+}
+
+function spawnInteractive(bin, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, {
+      cwd,
+      stdio: "inherit",
+    });
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${bin} exited with code ${code}`));
+      }
+    });
+    child.on("error", reject);
+  });
 }
 
 await main();
