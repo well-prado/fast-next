@@ -75,9 +75,11 @@ The CLI automatically wires the routes into `serverRoutes` and adds `@modelconte
 
 When `--with-docker` is passed, the CLI creates:
 
-- `docker-compose.yml` with app, Postgres, Redis, and MCP services.
+- `docker-compose.yml` with health-checked app, Postgres, Redis, and MCP services.
+- `Dockerfile` (Next.js dev server) and `Dockerfile.mcp` (MCP server entrypoint).
 - `.dockerignore` seeded with common build artifacts.
 - `.env.example` describing the environment variables referenced by the compose file.
+- `docker:up`, `docker:down`, and `docker:logs` scripts added to `package.json` if they’re missing.
 
 Update `.env` and `Dockerfile` as needed before running `docker compose up`.
 

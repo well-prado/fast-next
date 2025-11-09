@@ -691,6 +691,27 @@ async function ensurePackageJsonDeps(projectRoot, deps) {
   }
 }
 
+async function ensurePackageJsonScripts(projectRoot, scripts) {
+  const packageJsonPath = path.join(projectRoot, "package.json");
+  if (!(await fileExists(packageJsonPath))) {
+    return;
+  }
+  const raw = await fs.readFile(packageJsonPath, "utf8");
+  const pkg = JSON.parse(raw);
+  pkg.scripts = pkg.scripts ?? {};
+  let changed = false;
+  for (const [key, value] of Object.entries(scripts)) {
+    if (!pkg.scripts[key]) {
+      pkg.scripts[key] = value;
+      changed = true;
+    }
+  }
+  if (changed) {
+    await fs.writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+    console.log(`[update] package.json (added docker scripts)`);
+  }
+}
+
 async function installDependencies(manager, cwd, deps) {
   const config = INSTALL_COMMANDS[manager];
   if (!config) {
@@ -788,20 +809,36 @@ async function scaffoldDockerTemplate({ projectRoot, force }) {
   );
 
   await writeFile(
+    path.join(projectRoot, "Dockerfile"),
+    getDockerfileTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(projectRoot, "Dockerfile.mcp"),
+    getDockerfileMcpTemplate(),
+    force
+  );
+
+  await writeFile(
     path.join(projectRoot, ".dockerignore"),
     getDockerIgnoreTemplate(),
     false
   );
 
   const envExamplePath = path.join(projectRoot, ".env.example");
-  const envTemplate = getEnvExampleTemplate();
-  const exists = await fileExists(envExamplePath);
-  if (!exists) {
-    await fs.writeFile(envExamplePath, envTemplate, "utf8");
+  if (!(await fileExists(envExamplePath))) {
+    await fs.writeFile(envExamplePath, getEnvExampleTemplate(), "utf8");
     console.log("[docker] .env.example created");
   }
 
-  console.log("[docker] docker-compose.yml created");
+  await ensurePackageJsonScripts(projectRoot, {
+    "docker:up": "docker compose up app postgres redis mcp-server",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app",
+  });
+
+  console.log("[docker] docker-compose.yml, Dockerfile, Dockerfile.mcp created");
 }
 
 function getCacheServiceTemplate(provider) {
@@ -1207,7 +1244,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: pnpm dev
+    command: pnpm dev --hostname 0.0.0.0 --port 3000
     ports:
       - "3000:3000"
     env_file:
@@ -1216,8 +1253,10 @@ services:
       - .:/app
       - /app/node_modules
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   postgres:
     image: postgres:15-alpine
@@ -1230,6 +1269,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -1239,18 +1284,28 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mcp-server:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.mcp
     command: pnpm exec tsx src/server/services/mcp/server.ts
     environment:
       MCP_PORT: 3001
     ports:
       - "3001:3001"
     depends_on:
-      - app
+      app:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:
@@ -1287,6 +1342,42 @@ UPSTASH_REDIS_REST_TOKEN=
 
 # MCP server
 MCP_PORT=3001
+`;
+}
+
+function getDockerfileTemplate() {
+  return `FROM node:20-alpine
+
+RUN corepack enable && apk add --no-cache bash curl
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+`;
+}
+
+function getDockerfileMcpTemplate() {
+  return `FROM node:20-alpine
+
+RUN corepack enable && apk add --no-cache bash curl
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile || pnpm install
+
+COPY . .
+
+EXPOSE 3001
+
+CMD ["pnpm", "exec", "tsx", "src/server/services/mcp/server.ts"]
 `;
 }
 

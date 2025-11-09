@@ -23,6 +23,8 @@ bunx create-fast-next init .
 
 Pass `--install auto` (or `--install pnpm|npm|yarn|bun`) to have the CLI add dependencies. Need BullMQ scaffolding? Append `--with-queue`. Need caching? Use `--with-cache redis|upstash|memory`. Want MCP tooling or Docker compose? Use `--with-mcp` / `--with-docker`. Need another domain slice later? Swap `init` for `feature <name>` in any of the commands above, e.g. `npx create-fast-next feature projects`.
 
+When Docker files are generated, run `pnpm docker:up` to boot the stack (app + Postgres + Redis + MCP) and `pnpm docker:down` when you’re done. Logs are available via `pnpm docker:logs`.
+
 See the [CLI reference](./cli.mdx) for all options.
 
 ## 3. Run the web app
