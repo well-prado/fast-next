@@ -27,26 +27,47 @@ curl http://localhost:3000/api/users/1
 
 Both responses come from Fastify handlers defined in `apps/web/src/server/routes/index.ts`.
 
-## 4. Inspect the server client demo
+## 4. Inspect the server + query client demo
 
 Open `apps/web/app/page.tsx`. The default home page is an **async Server Component** that fetches a featured user via:
 
 ```ts
-const result = await api.get.user.query({
+const result = await api.users.get.query({
   params: { id: "1" },
 });
+```
 
-// Or use the query client helper when batching/memoizing
-await queryClient.fetchQuery("users", "get", { params: { id: "1" } });
+That `api` instance is generated automatically by `createServerClient` (`apps/web/src/server/api.ts`) and backed by the Fastify server caller—zero HTTP hop, full type safety.
+
+Need batching or cache semantics? Use the query client:
+
+```ts
+await queryClient.fetchQuery("users", "get", {
+  params: { id: "1" },
+});
 ```
 
 Because this runs inside the same process there is no HTTP overhead, yet the response types match the Zod schemas thanks to the typed server caller + auto-generated helpers.
 
-## 5. Run type and lint pipelines
+## 5. Try the browser hooks
+
+Scroll down to “Client-side projects.” That entire section lives in `apps/web/src/components/projects-client-panel.tsx` and relies on the browser client + hook API:
+
+```ts
+const query = api.projects.list.useQuery();
+const mutation = api.projects.create.useMutation({
+  invalidate: { resource: "projects" },
+});
+```
+
+`api` now exposes both `.query()` (server) and `.useQuery()`/`.useMutation()` (client) for every Fastify route. The browser client is created once in `apps/web/src/client/api.ts`, and the shared cache comes from `@fast-next/fastify-query-client`.
+
+## 6. Run type and lint pipelines
 
 ```bash
 pnpm --filter @fast-next/fastify-zod-router check-types
 pnpm --filter @fast-next/fastify-server-caller check-types
+pnpm --filter @fast-next/fastify-browser-client check-types
 pnpm --filter web check-types
 pnpm lint
 ```

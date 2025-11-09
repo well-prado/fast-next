@@ -1,4 +1,4 @@
-import type { RouteConfig, RouteMeta, RouteSchema } from "./types.js";
+import type { RouteConfig, RouteMeta, RouteSchema } from "./types";
 
 export function defineRoute<
   TSchema extends RouteSchema,

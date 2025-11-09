@@ -60,9 +60,15 @@ importers:
       '@fast-next/fastify-app-factory':
         specifier: workspace:*
         version: link:../../packages/fastify-app-factory
+      '@fast-next/fastify-browser-client':
+        specifier: workspace:*
+        version: link:../../packages/fastify-browser-client
       '@fast-next/fastify-next-adapter':
         specifier: workspace:*
         version: link:../../packages/fastify-next-adapter
+      '@fast-next/fastify-query-client':
+        specifier: workspace:*
+        version: link:../../packages/fastify-query-client
       '@fast-next/fastify-router':
         specifier: workspace:*
         version: link:../../packages/fastify-router
@@ -174,6 +180,43 @@ importers:
         specifier: 5.9.2
         version: 5.9.2
 
+  packages/fastify-browser-client:
+    dependencies:
+      '@fast-next/fastify-query-client':
+        specifier: workspace:*
+        version: link:../fastify-query-client
+      '@fast-next/fastify-router':
+        specifier: workspace:*
+        version: link:../fastify-router
+      '@fast-next/fastify-server-caller':
+        specifier: workspace:*
+        version: link:../fastify-server-caller
+      '@fast-next/fastify-zod-router':
+        specifier: workspace:*
+        version: link:../fastify-zod-router
+      react:
+        specifier: '>=18.0.0'
+        version: 19.2.0
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.15.3
+      '@types/react':
+        specifier: 19.2.2
+        version: 19.2.2
+      eslint:
+        specifier: ^9.39.1
+        version: 9.39.1
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+
   packages/fastify-next-adapter:
     devDependencies:
       '@repo/eslint-config':
@@ -197,6 +240,34 @@ importers:
       next:
         specifier: ^16.0.1
         version: 16.0.1(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+
+  packages/fastify-query-client:
+    dependencies:
+      '@fast-next/fastify-router':
+        specifier: workspace:*
+        version: link:../fastify-router
+      '@fast-next/fastify-server-caller':
+        specifier: workspace:*
+        version: link:../fastify-server-caller
+      '@fast-next/fastify-zod-router':
+        specifier: workspace:*
+        version: link:../fastify-zod-router
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.15.3
+      eslint:
+        specifier: ^9.39.1
+        version: 9.39.1
       typescript:
         specifier: 5.9.2
         version: 5.9.2
@@ -256,6 +327,9 @@ importers:
 
   packages/fastify-server-client:
     dependencies:
+      '@fast-next/fastify-query-client':
+        specifier: workspace:*
+        version: link:../fastify-query-client
       '@fast-next/fastify-router':
         specifier: workspace:*
         version: link:../fastify-router

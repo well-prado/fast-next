@@ -9,7 +9,7 @@ This section explains how the Fast Next stack stitches Next.js and Fastify toget
   -> handleNextRequest()  (adapter)
     -> fastify.inject()
       -> Fastify instance from getFastifyApp()
-        -> registerCoreRoutes() registers coreRouter routes
+        -> registerRoutes() wires up serverRoutes (system, projects, ...)
 ```
 
 ### Fastify instance lifecycle
@@ -20,9 +20,9 @@ This section explains how the Fast Next stack stitches Next.js and Fastify toget
 
 ### Routing + validation
 
-- `createRouter()` (from `@fast-next/fastify-zod-router`) builds an in-memory array of `{ method, path, schema, handler }`.
-- When you call `.build()` you get `{ routes, register }`.
-- `register(app)` loops over every route and calls `app.route({ method, url, schema, handler })`, where `schema` is the JSON Schema version of your Zod definitions (status-by-status if needed).
+- `createRoute()` (from `@fast-next/fastify-router`) records literal `resource` + `operation` metadata alongside method, path, and schema.
+- `registerRoutes(app, routes)` loops over every entry, converts the Zod schema to JSON Schema (via `@fast-next/fastify-zod-router`), and calls `app.route`.
+- Because the resource/operation names stay literal, every downstream client (server or browser) can autocomplete the available endpoints.
 
 ### Next.js adapter
 
@@ -36,10 +36,13 @@ export const POST = handle;
 
 `handle(req)` resolves the Fastify instance, converts the `NextRequest` into an inject call, and translates the result back into `NextResponse`.
 
-### Server caller
+### Typed server + browser clients
 
-- `createServerCaller(coreRouter)` builds a typed dispatcher.
-- When invoked, it finds the matching route definition, fabricates `FastifyRequest/Reply` shims, executes the handler, and returns `{ statusCode, headers, body }`.
-- Because the `coreRouter` metadata includes literal method + path strings, TypeScript narrows the valid combinations for you.
+- `createServerCaller(builtRouter)` fabricates Fastify `request/reply` shims so handlers can run without HTTP.
+- `createServerClient(routes, caller)` walks the route metadata and exposes `api.resource.operation.query()` / `.mutate()`.
+- `FastifyQueryClient` (shared cache) adds `fetchQuery`, batching, and invalidation for server-side workflows.
+- `createBrowserClient(routes, options)` reuses the same metadata but wires it to `fetch` + hooks. Every endpoint gains `useQuery` or `useMutation` automatically, matching TanStack’s ergonomics.
+
+Together these pieces provide the “define once, consume anywhere” workflow that mirrors Igniter.js’ router/controller pairing—now with native support for both server components and browser hooks.
 
 Together these pieces provide the “define once, consume anywhere” workflow that mirrors Igniter.js’ router/controller pairing.

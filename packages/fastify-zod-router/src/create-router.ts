@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { buildFastifySchema } from "./json-schema.js";
+import { buildFastifySchema } from "./json-schema";
 import type {
   BuiltRouter,
   RouteConfig,
@@ -9,7 +9,7 @@ import type {
   RouteSchema,
   RouterBuilder,
   RouterRegisterOptions,
-} from "./types.js";
+} from "./types";
 
 export function createRouter(): RouterBuilder {
   const routes: RouteDefinition[] = [];

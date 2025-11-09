@@ -91,6 +91,62 @@
   color: #6d6d6d;
 }
 
+.projectForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.projectInput,
+.projectSelect {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-alpha-200);
+  background: #fff;
+  min-width: 150px;
+}
+
+.projectButton {
+  font-family: var(--font-geist-sans);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  background: var(--foreground);
+  color: var(--background);
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
+}
+
+.projectButton:hover {
+  opacity: 0.85;
+}
+
+@media (prefers-color-scheme: dark) {
+  .projectInput,
+  .projectSelect {
+    background: rgba(var(--gray-rgb), 0.08);
+    color: inherit;
+  }
+
+  .projectButton {
+    color: #000;
+  }
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 .main ol {
   font-family: var(--font-geist-mono);
   padding-left: 0;

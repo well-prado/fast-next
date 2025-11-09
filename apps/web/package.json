@@ -13,6 +13,8 @@
   "dependencies": {
     "@fast-next/fastify-app-factory": "workspace:*",
     "@fast-next/fastify-next-adapter": "workspace:*",
+    "@fast-next/fastify-browser-client": "workspace:*",
+    "@fast-next/fastify-query-client": "workspace:*",
     "@fast-next/fastify-router": "workspace:*",
     "@fast-next/fastify-server-client": "workspace:*",
     "@fast-next/fastify-server-caller": "workspace:*",

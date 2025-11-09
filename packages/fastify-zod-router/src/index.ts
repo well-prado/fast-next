@@ -1,6 +1,6 @@
-export { createRouter } from "./create-router.js";
-export { defineRoute } from "./define-route.js";
-export { buildFastifySchema } from "./json-schema.js";
+export { createRouter } from "./create-router";
+export { defineRoute } from "./define-route";
+export { buildFastifySchema } from "./json-schema";
 export type {
   BuiltRouter,
   HttpMethod,
@@ -12,4 +12,4 @@ export type {
   RouterRegisterOptions,
   RouteGenericFromSchema,
   TypedRouteHandler,
-} from "./types.js";
+} from "./types";

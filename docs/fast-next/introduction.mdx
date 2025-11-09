@@ -5,7 +5,7 @@ Welcome to the living docs for the Fastify + Next.js integration that powers the
 ## Why This Exists
 
 - **Single source of truth** – Define routes once with Zod and reuse them everywhere.
-- **Three consumption modes** – HTTP via Next.js, typed server caller, and (soon) generated clients.
+- **Three consumption modes** – Native HTTP via Next.js, typed server calls via `api.resource.operation.query()`, and React hooks via `api.resource.operation.useQuery()` / `.useMutation()`.
 - **Feature-oriented workflow** – Colocate schemas, handlers, and services inside `apps/web/src/server`.
 
 The goal is to help you (and your future self) ship new features quickly without re-learning conventions or spelunking through framework code.
@@ -16,8 +16,12 @@ The goal is to help you (and your future self) ship new features quickly without
 | --- | --- |
 | `@fast-next/fastify-next-adapter` | Translates `NextRequest` → `fastify.inject` and back, handling headers, binary payloads, and base-path stripping. |
 | `@fast-next/fastify-app-factory` | Lazily builds a singleton Fastify instance with plugin hooks and dev-safe HMR resets. |
-| `@fast-next/fastify-zod-router` | Fluent router builder that stores method/path/schema metadata and emits Fastify JSON Schema. |
+| `@fast-next/fastify-zod-router` | Supplies the Zod-powered handler typings and JSON Schema conversion used by every route. |
+| `@fast-next/fastify-router` | Provides `createRoute`/`registerRoutes`, guaranteeing literal resource + operation metadata for downstream tooling. |
 | `@fast-next/fastify-server-caller` | Creates a typed `caller(method, path, options)` helper that executes handlers without HTTP. |
+| `@fast-next/fastify-server-client` | Walks the route metadata to build the ergonomic `api.resource.operation.query|mutate` helpers plus a server-side query client. |
+| `@fast-next/fastify-query-client` | Shared cache/invalidation layer used by both server and browser clients (TanStack-style behaviour). |
+| `@fast-next/fastify-browser-client` | Fetch-based client that exposes `api.resource.operation.useQuery/useMutation` hooks for React components. |
 
 These packages live in `packages/*` and are wired into `apps/web`.
 

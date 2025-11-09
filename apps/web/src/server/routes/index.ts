@@ -41,11 +41,13 @@ const USERS = [
   },
 ] as const;
 
-const PROJECTS = [
+const initialProjects: Project[] = [
   { id: "p1", name: "DX Overhaul", status: "active" },
   { id: "p2", name: "Edge API Gateway", status: "draft" },
   { id: "p3", name: "Realtime Sync", status: "archived" },
-] as const;
+];
+
+let projects: Project[] = [...initialProjects];
 
 const healthSchema = {
   response: z.object({
@@ -76,6 +78,16 @@ const getProjectSchema = {
   response: {
     200: projectSchema,
     404: errorSchema,
+  },
+} as const;
+
+const createProjectSchema = {
+  body: z.object({
+    name: z.string().min(3),
+    status: projectSchema.shape.status.optional().default("draft"),
+  }),
+  response: {
+    201: projectSchema,
   },
 } as const;
 
@@ -114,7 +126,7 @@ export const serverRoutes = [
     operation: "list",
     schema: listProjectsSchema,
     handler: (async () => ({
-      items: PROJECTS,
+      items: projects,
     })) satisfies TypedRouteHandler<typeof listProjectsSchema>,
   }),
   createRoute({
@@ -124,7 +136,7 @@ export const serverRoutes = [
     operation: "get",
     schema: getProjectSchema,
     handler: (async ({ params }, reply) => {
-      const project = PROJECTS.find((candidate) => candidate.id === params.id);
+      const project = projects.find((candidate) => candidate.id === params.id);
 
       if (!project) {
         reply.code(404);
@@ -133,6 +145,25 @@ export const serverRoutes = [
 
       return project;
     }) satisfies TypedRouteHandler<typeof getProjectSchema>,
+  }),
+  createRoute({
+    method: "POST",
+    path: "/projects",
+    resource: "projects",
+    operation: "create",
+    schema: createProjectSchema,
+    handler: (async (request, reply) => {
+      const payload = request.body;
+      const newProject = {
+        id: `p${projects.length + 1}`,
+        name: payload.name,
+        status: payload.status ?? "draft",
+      } as const;
+
+      projects = [...projects, newProject];
+      reply.code(201);
+      return newProject;
+    }) satisfies TypedRouteHandler<typeof createProjectSchema>,
   }),
 ] as const satisfies readonly FastifyRouteDefinition[];
 

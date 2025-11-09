@@ -22,4 +22,4 @@ const serverClientCaller = ((
 >;
 
 export const api = createServerClient(serverRoutes, serverClientCaller);
-export const queryClient = new FastifyQueryClient(api);
+export const queryClient = new FastifyQueryClient();

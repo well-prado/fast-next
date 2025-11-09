@@ -1,5 +1,5 @@
 {
-  "name": "@fast-next/fastify-server-client",
+  "name": "@fast-next/fastify-browser-client",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,20 +16,20 @@
     "check-types": "tsc --noEmit"
   },
   "peerDependencies": {
-    "fastify": "^4.28.1 || ^5.0.0"
+    "react": ">=18.0.0"
   },
   "dependencies": {
     "@fast-next/fastify-query-client": "workspace:*",
     "@fast-next/fastify-router": "workspace:*",
-    "@fast-next/fastify-zod-router": "workspace:*",
-    "@fast-next/fastify-server-caller": "workspace:*"
+    "@fast-next/fastify-server-caller": "workspace:*",
+    "@fast-next/fastify-zod-router": "workspace:*"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
+    "@types/react": "19.2.2",
     "eslint": "^9.39.1",
-    "fastify": "^5.0.0",
     "typescript": "5.9.2"
   }
 }

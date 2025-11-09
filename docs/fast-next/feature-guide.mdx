@@ -1,13 +1,13 @@
 # Building Your First Feature
 
-Walk through this recipe to add a new “projects” feature that exposes Fastify routes, serves them through Next.js, and consumes them directly on the server.
+This walkthrough mirrors the “projects” slice that already ships inside `apps/web`. You’ll define Fastify routes with Zod, register them, and consume them from both Server Components and client-side React hooks—using the same `api` surface everywhere.
 
-## 1. Define schemas and handlers
-
-Create `apps/web/src/server/features/projects/routes.ts`:
+## 1. Describe the routes with `createRoute`
 
 ```ts
-import { createRouter } from "@fast-next/fastify-zod-router";
+// apps/web/src/server/routes/projects.ts
+import { createRoute, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
 
 const projectSchema = z.object({
@@ -16,96 +16,167 @@ const projectSchema = z.object({
   status: z.enum(["draft", "active", "archived"]),
 });
 
-const projects = [
-  { id: "p1", name: "DX Overhaul", status: "active" },
-  { id: "p2", name: "AI SDK", status: "draft" },
-] as const;
+type Project = z.infer<typeof projectSchema>;
 
-export const projectsRouter = createRouter()
-  .get("/projects", {
+let projects: Project[] = [
+  { id: "p1", name: "DX Overhaul", status: "active" },
+  { id: "p2", name: "Edge API Gateway", status: "draft" },
+];
+
+export const projectRoutes = [
+  createRoute({
+    method: "GET",
+    path: "/projects",
+    resource: "projects",
+    operation: "list",
     schema: {
-      response: z.object({
-        items: z.array(projectSchema),
+      response: z.object({ items: z.array(projectSchema) }),
+    },
+    handler: (async () => ({ items: projects })) satisfies TypedRouteHandler<{ response: ReturnType<typeof z.object> }>,
+  }),
+  createRoute({
+    method: "POST",
+    path: "/projects",
+    resource: "projects",
+    operation: "create",
+    schema: {
+      body: z.object({
+        name: z.string().min(3),
+        status: projectSchema.shape.status.default("draft"),
       }),
+      response: { 201: projectSchema },
     },
-    handler: async () => ({ items: projects }),
-  })
-  .get("/projects/:id", {
-    schema: {
-      params: z.object({ id: z.string() }),
-      response: {
-        200: projectSchema,
-        404: z.object({ error: z.string() }),
-      },
-    },
-    handler: async ({ params }, reply) => {
-      const project = projects.find((p) => p.id === params.id);
-      if (!project) {
-        reply.code(404);
-        return { error: "Project not found" };
-      }
-      return project;
-    },
-  })
-  .build();
+    handler: (async (request, reply) => {
+      const next = {
+        id: `p${projects.length + 1}`,
+        name: request.body.name,
+        status: request.body.status,
+      } as const;
+      projects = [...projects, next];
+      reply.code(201);
+      return next;
+    }) satisfies TypedRouteHandler<{
+      body: ReturnType<typeof z.object>;
+      response: { 201: typeof projectSchema };
+    }>,
+  }),
+] as const satisfies readonly FastifyRouteDefinition[];
 ```
 
-## 2. Register the router
+Each call to `createRoute` records literal metadata (`resource`, `operation`) that downstream tooling uses for autocompletion. Zod keeps request/response types in sync.
 
-Open `apps/web/src/server/routes/index.ts` and import/register the feature:
+## 2. Register the routes with Fastify
+
+Combine your feature routes with any others and expose a helper for Fastify:
 
 ```ts
-import { projectsRouter } from "../features/projects/routes";
+// apps/web/src/server/routes/index.ts
+import type { FastifyInstance } from "fastify";
+import { createRoute, registerRoutes, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import { z } from "zod";
+import { projectRoutes } from "./projects";
 
-export async function registerCoreRoutes(app: FastifyInstance) {
-  await coreRouter.register(app);
-  await projectsRouter.register(app, { prefix: "/v1" });
+export const serverRoutes = [
+  createRoute({
+    method: "GET",
+    path: "/health",
+    resource: "system",
+    operation: "health",
+    schema: { response: z.object({ status: z.literal("ok") }) },
+    handler: async () => ({ status: "ok" as const }),
+  }),
+  // ...other routes...
+  ...projectRoutes,
+] as const satisfies readonly FastifyRouteDefinition[];
+
+export async function registerRoutes(app: FastifyInstance) {
+  await registerRoutes(app, serverRoutes);
 }
 ```
 
-Use `prefix` when you need a scoped namespace.
+Fastify receives real JSON Schema thanks to `@fast-next/fastify-zod-router`, so validation and Swagger tooling keep working out of the box.
 
-## 3. Consume via HTTP
-
-No extra work—`/api/v1/projects` is now live because the Next adapter forwards every request to Fastify. Hit it with cURL or your favorite REST client.
-
-## 4. Consume via server caller
-
-Export the built router (as above) and construct a caller + a typed helper:
+## 3. Generate the typed server API
 
 ```ts
 // apps/web/src/server/api.ts
 import { createServerCaller } from "@fast-next/fastify-server-caller";
-import { coreRouter } from "./routes";
-import { projectsRouter } from "./features/projects/routes";
+import { createServerClient, FastifyQueryClient } from "@fast-next/fastify-server-client";
+import type { BuiltRouter } from "@fast-next/fastify-zod-router";
+import { registerRoutes, serverRoutes } from "./routes";
 
-const mergedRouter = {
-  routes: [...coreRouter.routes, ...projectsRouter.routes],
-} as const;
+const builtRouter = {
+  routes: serverRoutes,
+  register: registerRoutes,
+} satisfies BuiltRouter<typeof serverRoutes>;
 
-export const serverCaller = createServerCaller(mergedRouter);
-export const api = {
-  call: serverCaller,
-  ...buildMethodApi(mergedRouter.routes, serverCaller),
-};
+export const serverCaller = createServerCaller(builtRouter);
+export const api = createServerClient(serverRoutes, serverCaller);
+export const queryClient = new FastifyQueryClient();
 ```
 
-Now you can fetch projects in any Server Component:
+- `api.resource.operation.query()` executes the Fastify handler directly inside Server Components, background jobs, or tests.
+- `queryClient.fetchQuery()` lets you memoize/batch server-side data fetches.
+
+## 4. Use the API in Server Components
 
 ```ts
-const { body } = await api.get.projects.query();
-// Or queryClient.fetchQuery("projects", "list")
+// apps/web/app/page.tsx
+const featuredUser = await api.users.get.query({ params: { id: "1" } });
+const { data: projects } = await api.projects.list.query();
 ```
 
-## 5. Validate end-to-end
+No HTTP hop occurs, but the return types are exactly the Zod responses you defined earlier.
+
+## 5. Create the browser client once
+
+```ts
+// apps/web/src/client/api.ts
+"use client";
+import { createBrowserClient } from "@fast-next/fastify-browser-client";
+import { FastifyQueryClient } from "@fast-next/fastify-query-client";
+import { serverRoutes } from "@/server/routes";
+
+const clientQueryCache = new FastifyQueryClient();
+export const api = createBrowserClient(serverRoutes, {
+  baseUrl: "/api",
+  queryClient: clientQueryCache,
+});
+```
+
+This mirrors Igniter.js’ generated client: every route automatically exposes `useQuery`, `useMutation`, `query`, and `mutate` helpers.
+
+## 6. Consume hooks inside React components
+
+```tsx
+// apps/web/src/components/projects-client-panel.tsx
+const query = api.projects.list.useQuery({ refetchOnWindowFocus: true });
+const mutation = api.projects.create.useMutation({
+  invalidate: { resource: "projects" },
+});
+
+return (
+  <div>
+    {query.isLoading ? "Loading…" : query.response?.data?.items.map(...)}
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      mutation.mutate({ body: { name, status } });
+    }}>
+      {/* inputs */}
+    </form>
+  </div>
+);
+```
+
+Invalidation targets understand `resource`/`operation`, so you can nuke entire resource caches or match specific query keys.
+
+## 7. Full validation pass
 
 ```bash
 pnpm --filter web dev
 curl http://localhost:3000/api/projects
-curl http://localhost:3000/api/v1/projects/p2
 pnpm --filter web check-types
+pnpm --filter @fast-next/fastify-browser-client check-types
 ```
 
-That’s it—routes defined once, available everywhere.
-
-> **Tip:** Keep Zod schemas in separate `schemas.ts` files when they’re shared between routers, forms, or clients. The router simply reuses the definitions.
+With this workflow you get “define once, consume everywhere” behaviour with server and browser DX matching Igniter.js. Add features by repeating steps 1–6 for each domain slice.

@@ -1,10 +1,16 @@
 import type { RouteCallOptions } from "@fast-next/fastify-server-caller";
-import type { RouteGenericFromSchema } from "@fast-next/fastify-zod-router";
+import type { FastifyRouteDefinition, RouteFor } from "@fast-next/fastify-router";
+import {
+  FastifyQueryClient,
+  type OperationDescriptor,
+  type OperationInvoker,
+  type OperationResponse,
+  type ResourceClient,
+  type RouteReply,
+} from "@fast-next/fastify-query-client";
 import type {
-  FastifyRouteDefinition,
   OperationsForResource,
   ResourceNames,
-  RouteFor,
 } from "@fast-next/fastify-router";
 
 export function createServerClient<
@@ -26,82 +32,7 @@ export function createServerClient<
   return client as ResourceClient<TRoutes>;
 }
 
-export class FastifyQueryClient<
-  TApi extends ResourceClient<any>
-> {
-  constructor(private readonly api: TApi) {}
-
-  fetchQuery<R extends keyof TApi, O extends keyof TApi[R]>(
-    resource: R,
-    operation: O,
-    options?: QueryOptions<TApi[R][O]>
-  ): QueryResult<TApi[R][O]> {
-    const resourceBucket = this.api[resource];
-
-    if (!resourceBucket) {
-      throw new Error(
-        `[fastify-query-client] Resource "${String(resource)}" is not registered`
-      );
-    }
-
-    const descriptor = resourceBucket[operation] as OperationDescriptor<any>;
-    if (!descriptor) {
-      throw new Error(
-        `[fastify-query-client] Operation "${String(operation)}" is not registered for "${String(resource)}"`
-      );
-    }
-
-    if ("query" in descriptor) {
-      return descriptor.query(options as Parameters<typeof descriptor.query>[0]) as QueryResult<
-        TApi[R][O]
-      >;
-    }
-
-    return descriptor.request(options as Parameters<typeof descriptor.request>[0]) as QueryResult<
-      TApi[R][O]
-    >;
-  }
-
-  fetchMutation<R extends keyof TApi, O extends keyof TApi[R]>(
-    resource: R,
-    operation: O,
-    options?: MutationOptions<TApi[R][O]>
-  ): MutationResult<TApi[R][O]> {
-    const resourceBucket = this.api[resource];
-
-    if (!resourceBucket) {
-      throw new Error(
-        `[fastify-query-client] Resource "${String(resource)}" is not registered`
-      );
-    }
-
-    const descriptor = resourceBucket[operation] as OperationDescriptor<any>;
-
-    if (!descriptor) {
-      throw new Error(
-        `[fastify-query-client] Operation "${String(operation)}" is not registered for "${String(resource)}"`
-      );
-    }
-
-    if ("mutate" in descriptor) {
-      return descriptor.mutate(options as Parameters<typeof descriptor.mutate>[0]) as MutationResult<
-        TApi[R][O]
-      >;
-    }
-
-    return descriptor.request(options as Parameters<typeof descriptor.request>[0]) as MutationResult<
-      TApi[R][O]
-    >;
-  }
-
-  fetchMany(queries: readonly QueryDescriptor<TApi>[]) {
-    return Promise.all(
-      queries.map((query) =>
-        this.fetchQuery(query.resource, query.operation, query.options)
-      )
-    );
-  }
-}
+export { FastifyQueryClient } from "@fast-next/fastify-query-client";
 
 function createOperationDescriptor<
   TRoutes extends readonly FastifyRouteDefinition[],
@@ -169,33 +100,6 @@ type FastifyCaller<TRoutes extends readonly FastifyRouteDefinition[]> = <
   body: RouteReply<RouteMatch<TRoutes, TMethod, TPath>>;
 }>;
 
-type RouteReply<Route extends FastifyRouteDefinition> = RouteGenericFromSchema<
-  Route["config"]["schema"]
->["Reply"];
-
-type OperationResponse<Route extends FastifyRouteDefinition> = {
-  statusCode: number;
-  headers: Record<string, string>;
-  data: RouteReply<Route>;
-};
-
-type OperationInvoker<Route extends FastifyRouteDefinition> = (
-  options?: RouteCallOptions<Route>
-) => Promise<OperationResponse<Route>>;
-
-type OperationDescriptor<Route extends FastifyRouteDefinition> =
-  Route["method"] extends "GET" | "HEAD"
-    ? { query: OperationInvoker<Route>; request: OperationInvoker<Route> }
-    : { mutate: OperationInvoker<Route>; request: OperationInvoker<Route> };
-
-type ResourceClient<TRoutes extends readonly FastifyRouteDefinition[]> = {
-  [R in ResourceNames<TRoutes>]: {
-    [O in OperationsForResource<TRoutes, R>]: OperationDescriptor<
-      RouteFor<TRoutes, R, O>
-    >;
-  };
-};
-
 export type QueryOptions<Descriptor> = Descriptor extends {
   query: (options?: infer Options) => unknown;
 }
@@ -238,10 +142,10 @@ export type QueryDescriptor<TApi extends ResourceClient<any>> = {
   }[keyof TApi[R]];
 }[keyof TApi];
 
+export type { FastifyCaller };
 export type {
   OperationDescriptor,
   OperationInvoker,
   OperationResponse,
   ResourceClient,
-  FastifyCaller,
-};
+} from "@fast-next/fastify-query-client";

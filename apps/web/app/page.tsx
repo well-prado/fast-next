@@ -1,5 +1,7 @@
+import { revalidatePath } from "next/cache";
 import Image, { type ImageProps } from "next/image";
 import { Button } from "@repo/ui/button";
+import { ProjectsClientPanel } from "@/components/projects-client-panel";
 import { api } from "@/server/api";
 import type { Project, User } from "@/server/routes";
 import styles from "./page.module.css";
@@ -40,6 +42,23 @@ async function getProjects(): Promise<Project[]> {
   }
 
   return projectsData.items;
+}
+
+async function createDemoProject(formData: FormData) {
+  "use server";
+
+  const name = formData.get("name")?.toString().trim() || "Untitled project";
+  const status = (formData.get("status")?.toString().trim() ||
+    "draft") as Project["status"];
+
+  await api.projects.create.mutate({
+    body: {
+      name,
+      status,
+    },
+  });
+
+  revalidatePath("/");
 }
 
 export default async function Home() {
@@ -86,8 +105,33 @@ export default async function Home() {
               These entries come from the same Fastify router but are rendered
               via the server API client—no HTTP hop required.
             </p>
+            <form action={createDemoProject} className={styles.projectForm}>
+              <label className={styles.visuallyHidden} htmlFor="project-name">
+                Project name
+              </label>
+              <input
+                id="project-name"
+                name="name"
+                placeholder="New project name"
+                className={styles.projectInput}
+              />
+              <select
+                name="status"
+                className={styles.projectSelect}
+                defaultValue="draft"
+                aria-label="Project status"
+              >
+                <option value="draft">Draft</option>
+                <option value="active">Active</option>
+                <option value="archived">Archived</option>
+              </select>
+              <button type="submit" className={styles.projectButton}>
+                Create project
+              </button>
+            </form>
           </section>
         )}
+        <ProjectsClientPanel />
         <ol>
           <li>
             Get started by editing <code>apps/web/app/page.tsx</code>
