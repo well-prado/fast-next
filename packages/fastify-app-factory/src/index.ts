@@ -1,6 +1,6 @@
-export type { FastifyAppConfig } from "./get-fastify-app";
+export type { FastifyAppConfig } from "./get-fastify-app.js";
 export {
   getFastifyApp,
   getFastifyAppSync,
   resetFastifyApp,
-} from "./get-fastify-app";
+} from "./get-fastify-app.js";

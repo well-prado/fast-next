@@ -1,12 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import {
-  buildFastifySchema,
-  type HttpMethod,
-  type RouteDefinition,
-  type RouteMeta,
-  type RouteSchema,
-  type TypedRouteHandler,
-} from "@fast-next/fastify-zod-router";
+import { createRoute, registerRoutes as registerFastifyRoutes, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
 
 const userSchema = z.object({
@@ -53,49 +47,37 @@ const PROJECTS = [
   { id: "p3", name: "Realtime Sync", status: "archived" },
 ] as const;
 
-type RouteDefinitionLiteral<
-  TMethod extends HttpMethod,
-  TPath extends string,
-  TSchema extends RouteSchema,
-  TResource extends string,
-  TOperation extends string
-> = RouteDefinition<TSchema, RouteMeta<TResource, TOperation>> & {
-  readonly method: TMethod;
-  readonly path: TPath;
-  readonly config: {
-    readonly schema: TSchema;
-    readonly handler: TypedRouteHandler<TSchema>;
-    readonly meta: RouteMeta<TResource, TOperation>;
-  };
-};
+const healthSchema = {
+  response: z.object({
+    status: z.literal("ok"),
+  }),
+} as const;
 
-function createRoute<
-  TMethod extends HttpMethod,
-  TPath extends string,
-  TSchema extends RouteSchema,
-  TResource extends string,
-  TOperation extends string
->(config: {
-  method: TMethod;
-  path: TPath;
-  resource: TResource;
-  operation: TOperation;
-  schema: TSchema;
-  handler: TypedRouteHandler<TSchema>;
-}): RouteDefinitionLiteral<TMethod, TPath, TSchema, TResource, TOperation> {
-  return {
-    method: config.method,
-    path: config.path,
-    config: {
-      schema: config.schema,
-      handler: config.handler,
-      meta: {
-        resource: config.resource,
-        operation: config.operation,
-      },
-    },
-  } as const;
-}
+const getUserSchema = {
+  params: z.object({
+    id: z.string(),
+  }),
+  response: {
+    200: userSchema,
+    404: errorSchema,
+  },
+} as const;
+
+const listProjectsSchema = {
+  response: z.object({
+    items: z.array(projectSchema),
+  }),
+} as const;
+
+const getProjectSchema = {
+  params: z.object({
+    id: z.string(),
+  }),
+  response: {
+    200: projectSchema,
+    404: errorSchema,
+  },
+} as const;
 
 export const serverRoutes = [
   createRoute({
@@ -103,30 +85,18 @@ export const serverRoutes = [
     path: "/health",
     resource: "system",
     operation: "health",
-    schema: {
-      response: z.object({
-        status: z.literal("ok"),
-      }),
-    },
-    handler: async () => {
+    schema: healthSchema,
+    handler: (async () => {
       return { status: "ok" as const };
-    },
+    }) satisfies TypedRouteHandler<typeof healthSchema>,
   }),
   createRoute({
     method: "GET",
     path: "/users/:id",
     resource: "users",
     operation: "get",
-    schema: {
-      params: z.object({
-        id: z.string(),
-      }),
-      response: {
-        200: userSchema,
-        404: errorSchema,
-      },
-    },
-    handler: async (request, reply) => {
+    schema: getUserSchema,
+    handler: (async (request, reply) => {
       const user = USERS.find((candidate) => candidate.id === request.params.id);
 
       if (!user) {
@@ -135,37 +105,25 @@ export const serverRoutes = [
       }
 
       return user;
-    },
+    }) satisfies TypedRouteHandler<typeof getUserSchema>,
   }),
   createRoute({
     method: "GET",
     path: "/projects",
     resource: "projects",
     operation: "list",
-    schema: {
-      response: z.object({
-        items: z.array(projectSchema),
-      }),
-    },
-    handler: async () => ({
+    schema: listProjectsSchema,
+    handler: (async () => ({
       items: PROJECTS,
-    }),
+    })) satisfies TypedRouteHandler<typeof listProjectsSchema>,
   }),
   createRoute({
     method: "GET",
     path: "/projects/:id",
     resource: "projects",
     operation: "get",
-    schema: {
-      params: z.object({
-        id: z.string(),
-      }),
-      response: {
-        200: projectSchema,
-        404: errorSchema,
-      },
-    },
-    handler: async ({ params }, reply) => {
+    schema: getProjectSchema,
+    handler: (async ({ params }, reply) => {
       const project = PROJECTS.find((candidate) => candidate.id === params.id);
 
       if (!project) {
@@ -174,22 +132,15 @@ export const serverRoutes = [
       }
 
       return project;
-    },
+    }) satisfies TypedRouteHandler<typeof getProjectSchema>,
   }),
-] as const;
-
-export async function registerRoutes(app: FastifyInstance) {
-  for (const route of serverRoutes) {
-    await app.route({
-      method: route.method,
-      url: route.path,
-      schema: buildFastifySchema(route.config.schema),
-      handler: route.config.handler as any,
-    });
-  }
-}
+] as const satisfies readonly FastifyRouteDefinition[];
 
 export type ServerRoutes = typeof serverRoutes;
 export type ServerRoute = ServerRoutes[number];
 export type User = z.infer<typeof userSchema>;
 export type Project = z.infer<typeof projectSchema>;
+
+export async function registerRoutes(app: FastifyInstance) {
+  await registerFastifyRoutes(app, serverRoutes);
+}

@@ -37,9 +37,15 @@ export const api = {
   ...buildMethodApi(mergedRouter.routes, serverCaller),
 };
 
+export const queryClient = new FastifyQueryClient(api);
+
 // Usage
 await api.get.user.query({ params: { id: "1" } });
 await api.get.projects.query();
+await queryClient.fetchMany([
+  { resource: "users", operation: "get", options: { params: { id: "1" } } },
+  { resource: "projects", operation: "list" },
+]);
 ```
 
 `buildMethodApi` walks every Fastify route and creates ergonomic chains (`api.get.<name>.query|mutate`). Because the structure is derived from router metadata, editors autocomplete the available endpoints automatically. Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available.

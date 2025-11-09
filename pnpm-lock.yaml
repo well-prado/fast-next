@@ -63,9 +63,15 @@ importers:
       '@fast-next/fastify-next-adapter':
         specifier: workspace:*
         version: link:../../packages/fastify-next-adapter
+      '@fast-next/fastify-router':
+        specifier: workspace:*
+        version: link:../../packages/fastify-router
       '@fast-next/fastify-server-caller':
         specifier: workspace:*
         version: link:../../packages/fastify-server-caller
+      '@fast-next/fastify-server-client':
+        specifier: workspace:*
+        version: link:../../packages/fastify-server-client
       '@fast-next/fastify-zod-router':
         specifier: workspace:*
         version: link:../../packages/fastify-zod-router
@@ -195,8 +201,67 @@ importers:
         specifier: 5.9.2
         version: 5.9.2
 
+  packages/fastify-router:
+    dependencies:
+      '@fast-next/fastify-zod-router':
+        specifier: workspace:*
+        version: link:../fastify-zod-router
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.15.3
+      eslint:
+        specifier: ^9.39.1
+        version: 9.39.1
+      fastify:
+        specifier: ^5.0.0
+        version: 5.6.1
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+
   packages/fastify-server-caller:
     dependencies:
+      '@fast-next/fastify-zod-router':
+        specifier: workspace:*
+        version: link:../fastify-zod-router
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.15.3
+      eslint:
+        specifier: ^9.39.1
+        version: 9.39.1
+      fastify:
+        specifier: ^5.0.0
+        version: 5.6.1
+      typescript:
+        specifier: 5.9.2
+        version: 5.9.2
+
+  packages/fastify-server-client:
+    dependencies:
+      '@fast-next/fastify-router':
+        specifier: workspace:*
+        version: link:../fastify-router
+      '@fast-next/fastify-server-caller':
+        specifier: workspace:*
+        version: link:../fastify-server-caller
       '@fast-next/fastify-zod-router':
         specifier: workspace:*
         version: link:../fastify-zod-router

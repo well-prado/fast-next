@@ -1,6 +1,6 @@
 import type { FastifySchema } from "fastify";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { AnyZod, RouteResponseSchema, RouteSchema } from "./types";
+import type { AnyZod, RouteResponseSchema, RouteSchema } from "./types.js";
 
 const DEFAULT_STATUS_CODE = "200";
 

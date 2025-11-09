@@ -3,4 +3,4 @@ export {
   type RouteCallOptions,
   type RouteCallResult,
   type ServerCaller,
-} from "./create-server-caller";
+} from "./create-server-caller.js";

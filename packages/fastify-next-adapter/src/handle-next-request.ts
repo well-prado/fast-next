@@ -5,8 +5,8 @@ import type {
 } from "light-my-request";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { convertNextHeaders } from "./headers";
-import { convertToNextResponse } from "./response";
+import { convertNextHeaders } from "./headers.js";
+import { convertToNextResponse } from "./response.js";
 
 const METHODS_WITHOUT_BODY = new Set<InjectOptions["method"]>(["GET", "HEAD"]);
 

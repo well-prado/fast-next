@@ -94,6 +94,7 @@ Now you can fetch projects in any Server Component:
 
 ```ts
 const { body } = await api.get.projects.query();
+// Or queryClient.fetchQuery("projects", "list")
 ```
 
 ## 5. Validate end-to-end

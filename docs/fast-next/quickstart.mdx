@@ -35,6 +35,9 @@ Open `apps/web/app/page.tsx`. The default home page is an **async Server Compone
 const result = await api.get.user.query({
   params: { id: "1" },
 });
+
+// Or use the query client helper when batching/memoizing
+await queryClient.fetchQuery("users", "get", { params: { id: "1" } });
 ```
 
 Because this runs inside the same process there is no HTTP overhead, yet the response types match the Zod schemas thanks to the typed server caller + auto-generated helpers.

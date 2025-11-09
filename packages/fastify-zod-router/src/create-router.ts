@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { buildFastifySchema } from "./json-schema";
+import { buildFastifySchema } from "./json-schema.js";
 import type {
   BuiltRouter,
   RouteConfig,
@@ -9,7 +9,7 @@ import type {
   RouteSchema,
   RouterBuilder,
   RouterRegisterOptions,
-} from "./types";
+} from "./types.js";
 
 export function createRouter(): RouterBuilder {
   const routes: RouteDefinition[] = [];
@@ -42,25 +42,46 @@ function createRouterBuilder<
 
   const builder: RouterBuilder<TRoutes> = {
     route,
-    get(path, config) {
+    get<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("GET", path, config);
     },
-    post(path, config) {
+    post<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("POST", path, config);
     },
-    put(path, config) {
+    put<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("PUT", path, config);
     },
-    patch(path, config) {
+    patch<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("PATCH", path, config);
     },
-    delete(path, config) {
+    delete<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("DELETE", path, config);
     },
-    head(path, config) {
+    head<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("HEAD", path, config);
     },
-    options(path, config) {
+    options<TPath extends string, TSchema extends RouteSchema>(
+      path: TPath,
+      config: RouteConfig<TSchema>
+    ) {
       return route("OPTIONS", path, config);
     },
     build(): BuiltRouter<TRoutes> {

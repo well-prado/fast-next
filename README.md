@@ -138,6 +138,8 @@ export const api = {
   routes: buildPathApi(mergedRouter.routes, serverCaller),
   ...buildMethodApi(mergedRouter.routes, serverCaller),
 };
+
+export const queryClient = new FastifyQueryClient(api);
 ```
 
 The `api.get` / `api.post` objects are generated automatically from the router metadata, so every new Fastify route shows up as an ergonomic chain. Usage in any Server Component:
@@ -148,13 +150,16 @@ const user = await api.get.user.query({
 });
 
 const projects = await api.get.projects.query();
+
+// TanStack-style helper
+const stats = await queryClient.fetchQuery("system", "health");
 ```
 
 Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available. Either way this never leaves the process: we fabricate a Fastify `request`/`reply`, run the handler, and return `{ statusCode, headers, body }`. Input/output types come from the same Zod schemas you already wrote, and the client advertises the available endpoints automatically.
 
 ### 5. Showcase in the UI
 
-`apps/web/app/page.tsx` fetches data through `api.get.user.query` / `api.get.projects.query` so you can see the pattern end-to-end.
+`apps/web/app/page.tsx` fetches data through `api.get.user.query` / `api.get.projects.query` so you can see the pattern end-to-end, and you can batch multiple calls with `queryClient.fetchMany([...])` when needed.
 
 ---
 
