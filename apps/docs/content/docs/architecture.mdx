@@ -1,0 +1,63 @@
+---
+title: Architecture
+description: How the Fastify adapter, router metadata, server caller, and clients snap together.
+---
+
+## Request Flow
+
+```
+Next.js Request
+   ↓
+app/api/[...fastify]/route.ts
+   ↓ handleNextRequest()
+Fastify Instance (from getFastifyApp)
+   ↓ registerRoutes(serverRoutes)
+Handlers defined via createRoute()
+```
+
+1. **Adapter** – `handleNextRequest` converts `NextRequest` → `fastify.inject` (headers, body, binary payloads, base path trimming) and returns a `NextResponse`.
+2. **App Factory** – `getFastifyApp` memoizes the Fastify instance, applies plugins, and survives HMR resets during dev.
+3. **Router Metadata** – `createRoute` stores `{ method, path, schema, resource, operation }`. `registerRoutes` converts Zod schema → Fastify JSON Schema and registers handlers.
+4. **Server Caller** – `createServerCaller` fabricates Fastify request/reply shims so handlers run without HTTP.
+5. **Server Client** – `createServerClient` walks route metadata and creates `api.<resource>.<operation>.query|mutate` helpers. `FastifyQueryClient` adds caching/batching.
+6. **Browser Client** – `createBrowserClient` reuses route metadata, generates `useQuery` / `useMutation` hooks, and pipes results through the shared query client.
+
+## Packages in Context
+
+| Layer | Package | Highlights |
+| --- | --- | --- |
+| Adapter | `@fast-next/fastify-next-adapter` | Maps Next → Fastify via `fastify.inject`, handles multi-value headers and streaming bodies. |
+| App lifecycle | `@fast-next/fastify-app-factory` | Builds once, caches on `globalThis` during dev, exposes `resetFastifyApp()` for tests. |
+| Routing | `@fast-next/fastify-router` + `@fast-next/fastify-zod-router` | Literal metadata (`resource`, `operation`) used to autocomplete every client helper. |
+| Server DX | `@fast-next/fastify-server-caller` / `@fast-next/fastify-server-client` | Executes handlers without HTTP and exposes typed `api.*.query` helpers. |
+| Browser DX | `@fast-next/fastify-browser-client` + `@fast-next/fastify-query-client` | Fetch + React hooks with TanStack-like semantics (stale time, refetch-on-focus, invalidation). |
+
+## Context & ORM
+
+`createAppContext` lives next to your server services and now supports:
+
+- **None** – returns `{}` (minimal context).
+- **Prisma** – `services/database.ts` exports `new PrismaClient()`; context injects `database` into every handler.
+- **Drizzle** – `services/drizzle/*` exposes a driver-specific client and async context factory.
+
+Pick an ORM via `create-fast-next init --orm prisma --db postgres` (or drizzle/sqlite/mysql) and the CLI generates everything, including `.env` templates and next-step reminders.
+
+## Data Flow Examples
+
+1. **Server Component**
+   ```ts
+   const project = await api.projects.get.query({ params: { id: "p1" } });
+   ```
+   - No HTTP hop; runs handler through server caller.
+2. **Browser Component**
+   ```ts
+   const { data, isLoading } = api.projects.list.useQuery();
+   ```
+   - Fetches via `fastify.inject` → HTTP response, cached by query client.
+3. **Queue Worker**
+   ```ts
+   queueService.registerWorker("email", async (job) => { ... });
+   ```
+   - Runs in a separate process started with `pnpm dlx create-fast-next queue start`.
+
+With these layers in place, you can bolt on cache providers, BullMQ workers, MCP tools, or Dockerized environments without rewriting the foundation.

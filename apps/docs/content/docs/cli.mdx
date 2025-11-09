@@ -1,0 +1,87 @@
+---
+title: CLI Reference
+description: `create-fast-next` scaffolds the Fastify bridge, optional modules, and follow-up commands.
+---
+
+`create-fast-next` ships inside this repo (see `packages/create-fast-next`). Run it with any package manager:
+
+```bash
+npx create-fast-next init .
+pnpm dlx create-fast-next init .
+yarn create fast-next init .
+bunx create-fast-next init .
+```
+
+## `init` Flags
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--app <path>` | Location of the Next.js `app` directory. | `app` |
+| `--server <path>` | Directory for Fastify files (`fastify-app.ts`, `routes`, etc.). | `src/server` |
+| `--api <path>` | Catch-all API route (relative to project root). | `<app>/api/[...fastify]` |
+| `--install <pm>` | Install deps with `pnpm`, `npm`, `yarn`, `bun`, `auto`, or `skip`. | Prompt (TTY) / `skip` (CI) |
+| `--orm <none|prisma|drizzle>` | Generate ORM boilerplate. | Prompt (TTY) / `none` |
+| `--db <sqlite|postgres|mysql>` | Database driver when ORM is enabled. | Prompt (TTY) / `sqlite` |
+| `--with-queue` | Add BullMQ service, queue, workers. | Prompt |
+| `--with-cache <provider>` | Add cache service (`memory`, `redis`, `upstash`). | Prompt |
+| `--with-mcp` | Add MCP server, sample tool, Fastify routes. | Prompt |
+| `--with-docker` | Add `docker-compose.yml`, Dockerfiles, `.env.example`, and npm scripts. | Prompt |
+| `--force` | Overwrite existing files. | `false` |
+| `--yes` | Skip prompts entirely (great for AI/CI). | `false` |
+
+### What Gets Generated
+
+- **Core bridge** – API catch-all route, `fastify-app.ts`, `server/api.ts`, and `routes/index.ts` with FAST_NEXT markers for future inserts.
+- **Queues (BullMQ)** – `queue.service.ts`, `queues/email.queue.ts`, `workers/email.worker.ts`, `workers/index.ts` + queue scripts.
+- **Cache service** – Memory provider + chosen provider (Redis or Upstash) with unified `CacheService` API.
+- **MCP** – `services/mcp/mcp.service.ts`, standalone server entry, `features/mcp/tools` with a sample tool and index, plus Fastify routes listing tools.
+- **Docker** – `docker-compose.yml` (app/postgres/redis/mcp with health checks), `Dockerfile`, `Dockerfile.mcp`, `.dockerignore`, `.env.example`, and `docker:*` npm scripts.
+- **ORMs** – Prisma or Drizzle schemas, clients, context wiring, and `.env` templates.
+
+## Commands
+
+### `queue`
+
+```
+pnpm dlx create-fast-next queue start --entry src/server/workers/index.ts
+pnpm dlx create-fast-next queue status --server src/server --redis redis://localhost:6379
+pnpm dlx create-fast-next queue generate invoices
+```
+
+- `start` runs workers via your detected package manager.
+- `status` inspects `src/server/queues` and prints BullMQ counts using Redis.
+- `generate <name>` scaffolds `<name>.queue.ts` + `<name>.worker.ts`.
+
+### `cache`
+
+```
+pnpm dlx create-fast-next cache stats --redis redis://localhost:6379
+pnpm dlx create-fast-next cache clear user:123
+```
+
+- `stats` prints Redis DB + memory stats.
+- `clear <key>` deletes a cache key (handy for debugging).
+
+### `mcp`
+
+```
+pnpm dlx create-fast-next mcp start --entry src/server/services/mcp/server.ts
+pnpm dlx create-fast-next mcp status
+pnpm dlx create-fast-next mcp tool query-db
+```
+
+- `start` runs the MCP server entrypoint.
+- `status` lists registered tools (parsed from the tools index).
+- `tool <name>` scaffolds a new tool file and adds it to the index.
+
+### Docker Scripts
+
+After generating Docker assets, use:
+
+```bash
+pnpm docker:up     # start app + postgres + redis + mcp
+pnpm docker:down   # stop & remove containers
+pnpm docker:logs   # follow app logs
+```
+
+Leverage these commands in automation (or AI workflows) by combining flags: e.g. `pnpm dlx create-fast-next init . --yes --orm prisma --db postgres --with-queue --with-cache redis --with-mcp --with-docker --install auto`.

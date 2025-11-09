@@ -1,0 +1,58 @@
+---
+title: Server Caller
+description: Execute Fastify handlers directly – perfect for Server Components, jobs, and tests.
+---
+
+`@fast-next/fastify-server-caller` + `@fast-next/fastify-server-client` give you the `api.*.query|mutate` helpers that power both Server Components and queue workers.
+
+## Bootstrap
+
+```ts title="apps/web/src/server/api.ts"
+import { createServerCaller } from "@fast-next/fastify-server-caller";
+import { createServerClient, FastifyQueryClient } from "@fast-next/fastify-server-client";
+import { registerRoutes, serverRoutes } from "./routes";
+import type { BuiltRouter } from "@fast-next/fastify-zod-router";
+
+const builtRouter = {
+  routes: serverRoutes,
+  register: registerRoutes,
+} satisfies BuiltRouter<typeof serverRoutes>;
+
+export const serverCaller = createServerCaller(builtRouter);
+export const api = createServerClient(serverRoutes, serverCaller);
+export const queryClient = new FastifyQueryClient();
+```
+
+## Usage
+
+```ts
+const user = await api.users.get.query({ params: { id: "1" } });
+const projects = await api.projects.list.query();
+await queryClient.fetchMany([
+  { resource: "users", operation: "get", options: { params: { id: "1" } } },
+  { resource: "projects", operation: "list" },
+]);
+```
+
+- **Type-safe inputs** – `params`, `query`, `body`, and `headers` must match your Zod schemas.
+- **Type-safe outputs** – `result.body` narrows to the Zod `response` definitions (`200`, `404`, etc.).
+- **Context injection** – Pass `context` in `RouteCallOptions` to set `request.context` (great for auth).*
+
+## Error Handling
+
+- Missing routes throw `[fastify-server-caller] Route not found: METHOD PATH`.
+- Handler exceptions bubble up—wrap calls in `try/catch` when you need custom surfaces.
+
+## Testing Pattern
+
+```ts
+import { api } from "@/server/api";
+
+test("returns 404 when user missing", async () => {
+  const result = await api.users.get.query({ params: { id: "missing" } });
+  expect(result.statusCode).toBe(404);
+  expect(result.body).toEqual({ error: "User not found" });
+});
+```
+
+No HTTP involved, yet you execute the exact same handler code paths you ship to production.

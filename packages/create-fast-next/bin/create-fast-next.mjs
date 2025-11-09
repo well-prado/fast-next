@@ -52,6 +52,10 @@ const CACHE_DEPENDENCIES = {
   upstash: ["@upstash/redis"],
 };
 const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
+const ORM_DEPENDENCIES = {
+  prisma: ["prisma", "@prisma/client"],
+  drizzle: ["drizzle-orm", "drizzle-kit"],
+};
 
 const INSTALL_COMMANDS = {
   pnpm: {
@@ -136,6 +140,7 @@ async function runInit(options) {
   const serverDir = options.server ?? (await prompter.ask("Server directory", path.join("src", "server")));
   const apiDir = options.api ?? (await prompter.ask("API catch-all path", path.join(appDir, "api", "[...fastify]")));
   const force = Boolean(options.force);
+  const ormChoice = await resolveOrmOption(options.orm, options.db, prompter);
   const queueEnabled = await resolveBooleanOption(
     options["with-queue"],
     prompter,
@@ -182,6 +187,12 @@ async function runInit(options) {
 
   const dependencySet = new Set(CORE_DEPENDENCIES);
   const postInitNotes = [];
+
+  if (ormChoice.orm !== "none") {
+    await scaffoldOrm({ projectRoot, serverDirAbs, force, choice: ormChoice });
+    ormChoice.dependencies.forEach((dep) => dependencySet.add(dep));
+    postInitNotes.push(...ormChoice.notes);
+  }
 
   if (queueEnabled) {
     await scaffoldQueueTemplate({ projectRoot, serverDirAbs, force });
@@ -607,6 +618,43 @@ function camelCase(value) {
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 }
 
+async function resolveOrmOption(ormFlag, dbFlag, prompter) {
+  const ormValue = ormFlag ?? (prompter.enabled ? await prompter.ask("Select ORM (none/prisma/drizzle)", "none") : "none");
+  const orm = ormValue.toLowerCase();
+  if (!["none", "prisma", "drizzle"].includes(orm)) {
+    throw new Error(`Unsupported orm '${orm}'. Choose none, prisma, or drizzle.`);
+  }
+  if (orm === "none") {
+    return { orm: "none", db: "sqlite", dependencies: [], notes: [] };
+  }
+
+  const dbValue = dbFlag ?? (prompter.enabled ? await prompter.ask("Select database (sqlite/postgres/mysql)", "sqlite") : "sqlite");
+  const db = dbValue.toLowerCase();
+  if (!["sqlite", "postgres", "mysql"].includes(db)) {
+    throw new Error(`Unsupported database '${db}'. Choose sqlite, postgres, or mysql.`);
+  }
+
+  const dependencies = new Set();
+  const notes = [];
+
+  if (orm === "prisma") {
+    dependencies.add("prisma");
+    dependencies.add("@prisma/client");
+    notes.push("Run 'npx prisma generate' after installing dependencies.");
+    notes.push("Update prisma/schema.prisma and run 'npx prisma migrate dev'.");
+    if (db === "postgres") dependencies.add("@neondatabase/serverless");
+  } else if (orm === "drizzle") {
+    dependencies.add("drizzle-orm");
+    dependencies.add("drizzle-kit");
+    if (db === "sqlite") dependencies.add("better-sqlite3");
+    if (db === "postgres") dependencies.add("pg");
+    if (db === "mysql") dependencies.add("mysql2");
+    notes.push("Configure drizzle.config.ts and run 'pnpm drizzle-kit generate'.");
+  }
+
+  return { orm, db, dependencies: Array.from(dependencies), notes };
+}
+
 function createPrompter(enabled) {
   if (!enabled) {
     return {
@@ -851,6 +899,26 @@ async function scaffoldCustomQueue({ projectRoot, name, serverDir, force }) {
   await writeFile(queueFile, getCustomQueueTemplate(name), force);
   await writeFile(workerFile, getCustomWorkerTemplate(name), force);
   console.log(`[queue] custom queue '${name}' scaffolded`);
+}
+
+async function scaffoldOrm({ projectRoot, serverDirAbs, force, choice }) {
+  if (choice.orm === "prisma") {
+    await scaffoldPrisma(projectRoot, choice.db, force);
+    await ensureDir(path.join(serverDirAbs, "services"));
+    await writeFile(
+      path.join(serverDirAbs, "services", "database.ts"),
+      getPrismaServiceTemplate(),
+      force
+    );
+  } else if (choice.orm === "drizzle") {
+    await scaffoldDrizzle(projectRoot, serverDirAbs, choice.db, force);
+  }
+
+  await writeFile(
+    path.join(serverDirAbs, "context.ts"),
+    getContextTemplate(choice.orm),
+    force
+  );
 }
 
 async function printQueueStats({ redisUrl, projectRoot, serverDir }) {
@@ -1318,6 +1386,29 @@ queueService.registerWorker<${pascal}Payload>(${name}Queue.name, async (job: Job
 `;
 }
 
+async function scaffoldPrisma(projectRoot, db, force) {
+  const prismaDir = path.join(projectRoot, "prisma");
+  await ensureDir(prismaDir);
+  await writeFile(path.join(prismaDir, "schema.prisma"), getPrismaSchemaTemplate(db), force);
+
+  const envPath = path.join(projectRoot, ".env");
+  if (!(await fileExists(envPath))) {
+    await fs.writeFile(envPath, getPrismaEnvTemplate(db), "utf8");
+  }
+}
+
+async function scaffoldDrizzle(projectRoot, serverDirAbs, db, force) {
+  const drizzleDir = path.join(serverDirAbs, "services", "drizzle");
+  await ensureDir(drizzleDir);
+  await writeFile(path.join(drizzleDir, "schema.ts"), getDrizzleSchemaTemplate(), force);
+  await writeFile(path.join(drizzleDir, "client.ts"), getDrizzleClientTemplate(db), force);
+  await writeFile(path.join(projectRoot, "drizzle.config.ts"), getDrizzleConfigTemplate(db), force);
+  const envPath = path.join(projectRoot, ".env");
+  if (!(await fileExists(envPath))) {
+    await fs.writeFile(envPath, getDrizzleEnvTemplate(db), "utf8");
+  }
+}
+
 function getMcpServiceTemplate() {
   return `import { MCPServer } from "@modelcontextprotocol/sdk";
 
@@ -1624,6 +1715,131 @@ async function listMcpTools(indexPath) {
   }
   console.log("Registered MCP tools:\n");
   matches.forEach((tool) => console.log(`- ${tool}`));
+}
+
+function getPrismaSchemaTemplate(db) {
+  const provider = db === "mysql" ? "mysql" : db === "postgres" ? "postgresql" : "sqlite";
+  const urlComment = provider === "sqlite" ? "file:./dev.db" : "env(\"DATABASE_URL\")";
+  return `generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "${provider}"
+  url      = ${provider === "sqlite" ? `"${urlComment}"` : urlComment}
+}
+
+model Example {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+}
+`;
+}
+
+function getPrismaEnvTemplate(db) {
+  if (db === "sqlite") {
+    return `DATABASE_URL="file:./dev.db"\n`;
+  }
+  if (db === "postgres") {
+    return `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fast_next"\n`;
+  }
+  return `DATABASE_URL="mysql://root:password@localhost:3306/fast_next"\n`;
+}
+
+function getPrismaServiceTemplate() {
+  return `import { PrismaClient } from "@prisma/client";
+
+export const database = new PrismaClient();
+`;
+}
+
+function getDrizzleSchemaTemplate() {
+  return `import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+
+export const example = sqliteTable("example", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(Math.floor(Date.now() / 1000)),
+});
+`;
+}
+
+function getDrizzleClientTemplate(db) {
+  const importLine =
+    db === "sqlite"
+      ? 'import Database from "better-sqlite3";\nimport { drizzle } from "drizzle-orm/better-sqlite3";'
+      : db === "postgres"
+        ? 'import { Pool } from "pg";\nimport { drizzle } from "drizzle-orm/node-postgres";'
+        : 'import mysql from "mysql2/promise";\nimport { drizzle } from "drizzle-orm/mysql2";';
+  const clientSetup =
+    db === "sqlite"
+      ? "const sqlite = new Database('sqlite.db');\nexport const database = drizzle(sqlite);"
+      : db === "postgres"
+        ? "const pool = new Pool({ connectionString: process.env.DATABASE_URL });\nexport const database = drizzle(pool);"
+        : "const pool = await mysql.createPool({ uri: process.env.DATABASE_URL });\nexport const database = drizzle(pool);";
+  return `${importLine}
+
+export async function getDatabase() {
+  ${db === "sqlite" ? "return drizzle(new Database('sqlite.db'));" : db === "postgres" ? "const pool = new Pool({ connectionString: process.env.DATABASE_URL });\n  return drizzle(pool);" : "const pool = await mysql.createPool({ uri: process.env.DATABASE_URL });\n  return drizzle(pool);"}
+}
+`;
+}
+
+function getDrizzleConfigTemplate(db) {
+  const driver = db === "sqlite" ? "better-sqlite" : db === "postgres" ? "pg" : "mysql2";
+  const out = db === "sqlite" ? "./drizzle" : "./drizzle";
+  return `import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  schema: "./src/server/services/drizzle/schema.ts",
+  out: "${out}",
+  dialect: "${db === "sqlite" ? "sqlite" : db === "postgres" ? "postgresql" : "mysql"}",
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+`;
+}
+
+function getDrizzleEnvTemplate(db) {
+  if (db === "sqlite") {
+    return `DATABASE_URL="file:./sqlite.db"\n`;
+  }
+  if (db === "postgres") {
+    return `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fast_next"\n`;
+  }
+  return `DATABASE_URL="mysql://root:password@localhost:3306/fast_next"\n`;
+}
+
+function getContextTemplate(orm) {
+  if (orm === "prisma") {
+    return `import { database } from "./services/database";
+
+export function createAppContext() {
+  return { database };
+}
+
+export type AppContext = ReturnType<typeof createAppContext>;
+`;
+  }
+  if (orm === "drizzle") {
+    return `import { getDatabase } from "./services/drizzle/client";
+
+export async function createAppContext() {
+  const database = await getDatabase();
+  return { database };
+}
+
+export type AppContext = Awaited<ReturnType<typeof createAppContext>>;
+`;
+  }
+  return `export function createAppContext() {
+  return {};
+}
+
+export type AppContext = ReturnType<typeof createAppContext>;
+`;
 }
 
 function getPackageRunner(manager, execArgs) {

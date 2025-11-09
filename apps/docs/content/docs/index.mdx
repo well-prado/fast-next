@@ -1,13 +1,38 @@
 ---
-title: Hello World
-description: Your first document
+title: Fast Next Overview
+description: Understand the goals, packages, and workflow behind the Fastify + Next.js vertical slice.
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+import { Cards, Card } from "fumadocs-ui/components/card";
 
-## What is Next?
+# Fast Next
+
+Fast Next is the experimental fusion of Fastify 5, Next.js 16, and a CLI-first DX inspired by Igniter.js. Define routes once with Zod, consume them anywhere (HTTP, server caller, React hooks), and let the CLI scaffold every moving part.
+
+## Why Fast Next?
+
+- **Single source of truth** – A route definition feeds Fastify, the server caller, and the browser client.
+- **Feature-based workflow** – Schemas, services, and routes live together under `apps/web/src/server`.
+- **Automation-first** – The `create-fast-next` CLI recreates the exact wiring (routes, API catch-all, queues, cache, MCP, Docker, ORM, etc.).
+
+## Major Building Blocks
+
+| Package | Purpose |
+| --- | --- |
+| `@fast-next/fastify-next-adapter` | Routes `NextRequest` through `fastify.inject`, preserving headers/body semantics. |
+| `@fast-next/fastify-app-factory` | Memoized Fastify instance with plugin hooks + HMR-safe resets. |
+| `@fast-next/fastify-zod-router` | Fluent router with literal resource/operation metadata + JSON Schema output. |
+| `@fast-next/fastify-router` | Thin helpers for `createRoute` / `registerRoutes` and type utilities. |
+| `@fast-next/fastify-server-caller` | Executes handlers without HTTP and powers the `api.*.query` helpers. |
+| `@fast-next/fastify-server-client` | Auto-generates `api.resource.operation.query|mutate` helpers from route metadata. |
+| `@fast-next/fastify-query-client` | Shared cache + invalidation layer for server and browser clients. |
+| `@fast-next/fastify-browser-client` | Fetch + hook generator (`useQuery` / `useMutation`) mirroring TanStack Query. |
+
+## Start Exploring
 
 <Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.dev" />
+  <Card title="Quickstart" description="Spin up the stack locally or via Docker." href="/docs/quickstart" />
+  <Card title="Architecture" description="Understand how routes, adapters, and clients fit together." href="/docs/architecture" />
+  <Card title="CLI Reference" description="Learn every flag – queues, cache, MCP, ORM, Docker, and more." href="/docs/cli" />
+  <Card title="Feature Guide" description="Walk through building a projects slice end-to-end." href="/docs/feature-guide" />
 </Cards>

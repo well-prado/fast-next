@@ -1,0 +1,55 @@
+---
+title: Next Adapter
+description: How handleNextRequest bridges the Next.js App Router and Fastify.
+---
+
+`@fast-next/fastify-next-adapter` is used in exactly two places:
+
+1. `apps/web/app/api/[...fastify]/route.ts` – the API catch-all.
+2. Tests/tooling where you want to adapt a `NextRequest` manually.
+
+## Catch-all Handler
+
+```ts title="apps/web/app/api/[...fastify]/route.ts"
+import type { NextRequest } from "next/server";
+import { handleNextRequest } from "@fast-next/fastify-next-adapter";
+import { getAppInstance } from "@/server/fastify-app";
+
+const handle = async (req: NextRequest) => {
+  const app = await getAppInstance();
+  return handleNextRequest(req, app);
+};
+
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const PATCH = handle;
+export const DELETE = handle;
+export const OPTIONS = handle;
+export const HEAD = handle;
+```
+
+## Responsibilities
+
+- **Header normalization** – Converts `Headers` → plain object, preserving multi-value headers (`Set-Cookie`).
+- **Body handling** – Buffers non-GET/HEAD payloads, supports binary data, and skips allocations for empty bodies.
+- **Base path stripping** – Defaults to trimming `/api`, keeping routers agnostic of Next’s file system.
+- **Error guard** – Wraps everything in `try/catch` and falls back to a 500 JSON response when Fastify throws.
+- **Response conversion** – Maps `LightMyRequestResponse` back to `NextResponse`, including headers and binary streams.
+
+## Customization
+
+```ts
+const handle = async (req: NextRequest) => {
+  const start = Date.now();
+  const res = await handleNextRequest(req, await getAppInstance(), {
+    apiBasePath: "/api", // optional override
+  });
+  console.log(req.method, req.nextUrl.pathname, res.status, Date.now() - start, "ms");
+  return res;
+};
+```
+
+## Testing Tips
+
+Because the adapter relies on `fastify.inject`, you can create a Fastify instance via `getFastifyApp()` and call `handleNextRequest` with a mocked `NextRequest` in integration tests. Snapshotting the returned `NextResponse` is an easy way to ensure header/body conversions stay stable.

@@ -1,0 +1,85 @@
+---
+title: Quickstart
+description: Install dependencies, wire the Fastify adapter, and explore the generated server and browser clients.
+---
+
+## 1. Install & Bootstrap
+
+```bash
+pnpm install
+pnpm dlx create-fast-next init . \
+  --install auto \
+  --with-queue \
+  --with-cache redis \
+  --with-mcp \
+  --with-docker \
+  --orm prisma --db postgres
+```
+
+All flags are optional—omit them to answer prompts interactively. The CLI drops the API catch-all, Fastify server helpers, optional queue/cache/MCP/Docker scaffolds, and (if selected) ORM boilerplate.
+
+## 2. Run the Web App
+
+```bash
+pnpm --filter web dev
+```
+
+Visit `http://localhost:3000`. The home page renders data fetched via:
+
+- `api.users.get.query()` in a **Server Component** (server caller, zero HTTP hop).
+- `api.projects.list.useQuery()` inside a **client component** (browser client hook).
+
+## 3. Smoke Test HTTP
+
+```bash
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/users/1
+```
+
+These hit Fastify handlers defined in `apps/web/src/server/routes/index.ts`.
+
+## 4. Explore the Server Client
+
+```ts
+import { api, queryClient } from "@/server/api";
+
+const user = await api.users.get.query({ params: { id: "1" } });
+const projects = await api.projects.list.query();
+await queryClient.fetchQuery("system", "health");
+```
+
+Every route automatically exposes `query`/`mutate` helpers plus query-client utilities for batching.
+
+## 5. Try the React Hooks
+
+In `ProjectsClientPanel`:
+
+```ts
+const query = api.projects.list.useQuery();
+const mutation = api.projects.create.useMutation({
+  invalidate: { resource: "projects" },
+});
+```
+
+`useQuery` refetches automatically after invalidation, and `useMutation` exposes TanStack-like state flags.
+
+## 6. Queue, Cache, MCP, Docker Commands
+
+```bash
+pnpm dlx create-fast-next queue start
+pnpm dlx create-fast-next queue status --redis redis://localhost:6379
+pnpm dlx create-fast-next cache stats
+pnpm dlx create-fast-next mcp tool query-db
+pnpm docker:up   # bring up app + postgres + redis + mcp
+```
+
+## 7. Type-Check & Lint
+
+```bash
+pnpm --filter @fast-next/fastify-zod-router check-types
+pnpm --filter @fast-next/fastify-server-client check-types
+pnpm --filter web check-types
+pnpm lint
+```
+
+With these basics working you’re ready to dive into the architecture, CLI, and feature guides.
