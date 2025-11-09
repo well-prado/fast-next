@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { createRoute, registerRoutes as registerFastifyRoutes, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import {
+  createRoute,
+  registerRoutes as registerFastifyRoutes,
+  type FastifyRouteDefinition,
+} from "@fast-next/fastify-router";
 import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
+// FAST_NEXT_ROUTE_IMPORTS
 
 const userSchema = z.object({
   id: z.string(),
@@ -165,6 +170,7 @@ export const serverRoutes = [
       return newProject;
     }) satisfies TypedRouteHandler<typeof createProjectSchema>,
   }),
+  // FAST_NEXT_ROUTE_SPREAD
 ] as const satisfies readonly FastifyRouteDefinition[];
 
 export type ServerRoutes = typeof serverRoutes;

@@ -1,0 +1,77 @@
+# CLI Reference
+
+Use the `create-fast-next` CLI to scaffold files and keep feature routes consistent across projects.
+
+## Installation
+
+While the package lives inside this monorepo, you can execute it via any package manager:
+
+```bash
+npx create-fast-next init .
+pnpm dlx create-fast-next init .
+yarn create fast-next init .
+bunx create-fast-next init .
+```
+
+Once it’s published to npm, the same commands work globally. During development you can point `pnpm dlx` at the local workspace: `pnpm dlx --package=./packages/create-fast-next create-fast-next init .`.
+
+## Commands
+
+### `init`
+
+```
+pnpm dlx create-fast-next init [projectDir] \
+  --app app \
+  --server src/server \
+  --api app/api/[...fastify]
+```
+
+- Creates the catch-all API route that forwards requests to Fastify.
+- Sets up `src/server/fastify-app.ts`, `src/server/routes/index.ts`, and `src/server/api.ts`.
+- Adds placeholder markers (`FAST_NEXT_ROUTE_IMPORTS` / `FAST_NEXT_ROUTE_SPREAD`) so future features can be appended automatically.
+- Drops a starter health-check route so `/api/health` responds immediately.
+- Prints the list of dependencies you need to install (`fastify`, `zod`, and the `@fast-next/*` packages).
+
+Options:
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--app <path>` | Location of your Next.js `app` directory. | `app` |
+| `--server <path>` | Directory that should hold `fastify-app.ts`, `routes`, etc. | `src/server` |
+| `--api <path>` | Relative path to the catch-all API route folder. | `<app>/api/[...fastify]` |
+| `--force` | Overwrite files if they already exist. | `false` |
+
+### `feature`
+
+```
+pnpm dlx create-fast-next feature projects --server src/server --dir .
+```
+
+- Generates `src/server/features/<name>/routes.ts` with a typed `createRoute` starter.
+- Updates `src/server/routes/index.ts` by inserting the necessary import and spreading the new routes into the master array (using the scaffold markers added during `init`).
+
+Options:
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `--dir <path>` | Project root where the server directory lives. | `.` |
+| `--server <path>` | Path to the server folder relative to `dir`. | `src/server` |
+| `--force` | Overwrite the feature file if it already exists. | `false` |
+
+> Tip: run `pnpm dlx create-fast-next feature analytics` as many times as you like—your `server/routes/index.ts` file will stay tidy thanks to the FAST_NEXT markers.
+
+## Manual usage inside the monorepo
+
+During development (before publishing) you can invoke the CLI directly:
+
+```
+pnpm dlx --package=./packages/create-fast-next create-fast-next init .
+```
+
+or
+
+```
+node packages/create-fast-next/bin/create-fast-next.mjs feature audit --server apps/web/src/server
+```
+
+The generated files match the conventions documented throughout this guide, so the server caller, browser client, and docs will continue to apply without additional tweaks.

@@ -1,0 +1,13 @@
+{
+  "name": "create-fast-next",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "create-fast-next": "./bin/create-fast-next.mjs"
+  },
+  "dependencies": {},
+  "scripts": {
+    "lint": "eslint . --max-warnings 0"
+  }
+}

@@ -189,6 +189,12 @@ Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available. Either
 - `options` lets you pass `params`, `body`, `query`, `headers`, plus arbitrary `context` you might want to surface to handlers later.
 - Useful inside Server Components, Server Actions, background jobs, or tests where you want the handler guarantee without HTTP overhead.
 
+### CLI (`create-fast-next`)
+
+- `pnpm dlx create-fast-next init .` scaffolds the catch-all API route plus `src/server/{fastify-app,routes,api}.ts`.
+- `pnpm dlx create-fast-next feature analytics` drops a new `src/server/features/analytics/routes.ts` file and wires it into the master `serverRoutes` array.
+- Pass `--app`, `--server`, or `--api` flags if your project structure differs. See `docs/fast-next/cli.mdx` for the full option list.
+
 ---
 
 ## Building Your Own Feature

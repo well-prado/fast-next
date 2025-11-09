@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { FormEvent } from "react";
 import { api } from "@/client/api";
@@ -25,31 +25,6 @@ export function ProjectsClientPanel() {
     invalidate: { resource: "projects" },
   });
 
-  useEffect(() => {
-    console.log("[projects query] state", {
-      status: query.status,
-      isLoading: query.isLoading,
-      isFetching: query.isFetching,
-      items: query.response?.data?.items ?? [],
-      error: query.error,
-    });
-  }, [
-    query.status,
-    query.isLoading,
-    query.isFetching,
-    query.response,
-    query.error,
-  ]);
-
-  useEffect(() => {
-    console.log("[projects mutation] state", {
-      status: mutation.status,
-      isPending: mutation.isPending,
-      error: mutation.error,
-      data: mutation.data,
-    });
-  }, [mutation.status, mutation.isPending, mutation.error, mutation.data]);
-
   const projects = useMemo(
     () => query.response?.data?.items ?? [],
     [query.response]
@@ -57,21 +32,14 @@ export function ProjectsClientPanel() {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    console.log("[projects mutation] submitting", {
-      projectName,
-      status,
-      existing: projects,
-    });
+
     mutation.mutate({
       body: {
         name: projectName || `Client project ${projects.length + 1}`,
         status,
       },
     });
-    console.log(
-      "[projects mutation] mutate called, pending?",
-      mutation.isPending
-    );
+
     setProjectName("");
   };
 

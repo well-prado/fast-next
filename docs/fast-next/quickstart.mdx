@@ -10,7 +10,22 @@ pnpm install
 
 > pnpm 9+ is required. Node 18.18+ recommended (Next 16 + Fastify 5 support).
 
-## 2. Run the web app
+## 2. Scaffold the Fastify bridge (optional)
+
+Setting up a new Next.js app? Let the CLI drop in the boilerplate routes and server helpers:
+
+```bash
+npx create-fast-next init .
+pnpm dlx create-fast-next init .
+yarn create fast-next init .
+bunx create-fast-next init .
+```
+
+Need another domain slice later? Swap `init` for `feature <name>` in any of the commands above, e.g. `npx create-fast-next feature projects`.
+
+See the [CLI reference](./cli.mdx) for all options.
+
+## 3. Run the web app
 
 ```bash
 pnpm --filter web dev
@@ -18,7 +33,7 @@ pnpm --filter web dev
 
 This boots Next.js on `http://localhost:3000` and mounts the Fastify instance behind the `/api/*` catch-all route.
 
-## 3. Smoke test the HTTP path
+## 4. Smoke test the HTTP path
 
 ```bash
 curl http://localhost:3000/api/health
@@ -27,7 +42,7 @@ curl http://localhost:3000/api/users/1
 
 Both responses come from Fastify handlers defined in `apps/web/src/server/routes/index.ts`.
 
-## 4. Inspect the server + query client demo
+## 5. Inspect the server + query client demo
 
 Open `apps/web/app/page.tsx`. The default home page is an **async Server Component** that fetches a featured user via:
 
@@ -49,7 +64,7 @@ await queryClient.fetchQuery("users", "get", {
 
 Because this runs inside the same process there is no HTTP overhead, yet the response types match the Zod schemas thanks to the typed server caller + auto-generated helpers.
 
-## 5. Try the browser hooks
+## 6. Try the browser hooks
 
 Scroll down to “Client-side projects.” That entire section lives in `apps/web/src/components/projects-client-panel.tsx` and relies on the browser client + hook API:
 
@@ -62,7 +77,7 @@ const mutation = api.projects.create.useMutation({
 
 `api` now exposes both `.query()` (server) and `.useQuery()`/`.useMutation()` (client) for every Fastify route. The browser client is created once in `apps/web/src/client/api.ts`, and the shared cache comes from `@fast-next/fastify-query-client`.
 
-## 6. Run type and lint pipelines
+## 7. Run type and lint pipelines
 
 ```bash
 pnpm --filter @fast-next/fastify-zod-router check-types
