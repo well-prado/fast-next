@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import readline from "node:readline/promises";
+import { spawn } from "node:child_process";
 
 const HELP = `create-fast-next
 
@@ -13,10 +16,47 @@ Options:
   --app <path>       Relative path to the Next.js app directory (default: app)
   --server <path>    Relative path to the server folder (default: src/server)
   --api <path>       Relative path to the API catch-all folder (default: <app>/api/[...fastify])
+  --install <pm>     Install dependencies with pnpm|npm|yarn|bun|auto|skip (default: prompt in TTY)
+  --with-queue       Include BullMQ queue scaffolding
   --force            Overwrite existing files when scaffolding
   --dir <path>       Base directory for feature scaffolding (default: .)
+  --yes              Skip interactive prompts
   -h, --help         Show this message
 `;
+
+const CORE_DEPENDENCIES = [
+  "fastify",
+  "zod",
+  "@fast-next/fastify-app-factory",
+  "@fast-next/fastify-next-adapter",
+  "@fast-next/fastify-router",
+  "@fast-next/fastify-zod-router",
+  "@fast-next/fastify-server-caller",
+  "@fast-next/fastify-server-client",
+  "@fast-next/fastify-browser-client",
+  "@fast-next/fastify-query-client",
+];
+
+const QUEUE_DEPENDENCIES = ["bullmq", "ioredis"];
+
+const INSTALL_COMMANDS = {
+  pnpm: {
+    bin: "pnpm",
+    args: ["add", ...CORE_DEPENDENCIES],
+  },
+  npm: {
+    bin: "npm",
+    args: ["install", ...CORE_DEPENDENCIES],
+  },
+  yarn: {
+    bin: "yarn",
+    args: ["add", ...CORE_DEPENDENCIES],
+  },
+  bun: {
+    bin: "bun",
+    args: ["add", ...CORE_DEPENDENCIES],
+  },
+};
 
 async function main() {
   const [, , rawCommand, ...rest] = process.argv;
@@ -69,11 +109,21 @@ function parseArgs(args) {
 }
 
 async function runInit(options) {
-  const projectRoot = path.resolve(process.cwd(), options._[0] ?? ".");
-  const appDir = options.app ?? "app";
-  const serverDir = options.server ?? path.join("src", "server");
-  const apiDir = options.api ?? path.join(appDir, "api", "[...fastify]");
+  const prompter = createPrompter(process.stdin.isTTY && !options.yes);
+  const projectDirInput = options._[0] ?? (await prompter.ask("Project directory", "."));
+  const projectRoot = path.resolve(process.cwd(), projectDirInput);
+  const appDir = options.app ?? (await prompter.ask("Next.js app directory", "app"));
+  const serverDir = options.server ?? (await prompter.ask("Server directory", path.join("src", "server")));
+  const apiDir = options.api ?? (await prompter.ask("API catch-all path", path.join(appDir, "api", "[...fastify]")));
   const force = Boolean(options.force);
+  const queueEnabled = await resolveBooleanOption(
+    options["with-queue"],
+    prompter,
+    "Add BullMQ queue scaffolding?",
+    false
+  );
+  const installChoice = await resolveInstallChoice(options.install, prompter, projectRoot);
+  prompter.close();
 
   const routeFile = path.join(projectRoot, apiDir, "route.ts");
   const serverDirAbs = path.join(projectRoot, serverDir);
@@ -97,13 +147,35 @@ async function runInit(options) {
   await writeFile(apiHelperFile, getServerApiTemplate(), force);
   await writeFile(path.join(featuresDir, ".gitkeep"), "", false);
 
-  console.log("\nScaffold complete. Next steps:\n");
-  console.log("1. Install dependencies:");
-  console.log(
-    "   pnpm add fastify zod @fast-next/fastify-app-factory @fast-next/fastify-next-adapter @fast-next/fastify-router @fast-next/fastify-zod-router @fast-next/fastify-server-caller @fast-next/fastify-server-client @fast-next/fastify-browser-client @fast-next/fastify-query-client"
-  );
-  console.log("2. Ensure your tsconfig.json maps '@/*' to your source directory if you plan to use alias imports.");
-  console.log("3. Start Next.js with 'pnpm dev' and hit /api/health to verify the bridge.");
+  const dependencySet = new Set(CORE_DEPENDENCIES);
+  const postInitNotes = [];
+
+  if (queueEnabled) {
+    await scaffoldQueueTemplate({ projectRoot, serverDirAbs, force });
+    QUEUE_DEPENDENCIES.forEach((dep) => dependencySet.add(dep));
+    const workersEntry = path.relative(projectRoot, path.join(serverDirAbs, "workers", "index.ts"));
+    postInitNotes.push(
+      "Configure REDIS_HOST/REDIS_PORT/REDIS_PASSWORD in your environment before running queues.",
+      `Start workers with ts-node/tsx (e.g., 'pnpm exec tsx ${workersEntry}') in a separate process.`
+    );
+  }
+
+  if (installChoice && installChoice !== "skip") {
+    await ensurePackageJsonDeps(projectRoot, Array.from(dependencySet));
+    await installDependencies(installChoice, projectRoot);
+  } else {
+    console.log("\nDependencies to install:");
+    console.log("  " + Array.from(dependencySet).join(" "));
+    console.log("Use your preferred package manager (e.g. 'pnpm add ...').");
+  }
+
+  console.log("\nNext steps:\n");
+  console.log("1. Ensure your tsconfig.json maps '@/*' to your source directory if you plan to use alias imports.");
+  console.log("2. Start Next.js with 'pnpm dev' and hit /api/health to verify the bridge.");
+  if (postInitNotes.length) {
+    console.log("\nAdditional notes:");
+    postInitNotes.forEach((note) => console.log(`- ${note}`));
+  }
 }
 
 async function runFeature(options) {
@@ -117,12 +189,18 @@ async function runFeature(options) {
   const featuresDir = path.join(serverDirAbs, "features");
   const featureDir = path.join(featuresDir, featureName);
   const routesFile = path.join(serverDirAbs, "routes", "index.ts");
-  const featureFile = path.join(featureDir, "routes.ts");
+  const routesFilePath = path.join(featureDir, "routes.ts");
+  const schemaFile = path.join(featureDir, "schemas.ts");
+  const serviceFile = path.join(featureDir, "service.ts");
+  const testFile = path.join(featureDir, "routes.test.ts");
 
   await ensureDir(featureDir);
-  await writeFile(featureFile, getFeatureTemplate(featureName), Boolean(options.force));
+  await writeFile(schemaFile, getFeatureSchemaTemplate(featureName), Boolean(options.force));
+  await writeFile(serviceFile, getFeatureServiceTemplate(featureName), Boolean(options.force));
+  await writeFile(routesFilePath, getFeatureRoutesTemplate(featureName), Boolean(options.force));
+  await writeFile(testFile, getFeatureTestTemplate(featureName), false);
   await injectFeatureImport(routesFile, featureName);
-  console.log(`Feature '${featureName}' scaffolded. Remember to visit the generated routes.`);
+  console.log(`Feature '${featureName}' scaffolded (schemas, service, routes, test).`);
 }
 
 async function writeFile(filePath, content, force) {
@@ -239,37 +317,112 @@ export const queryClient = new FastifyQueryClient();
 `;
 }
 
-function getFeatureTemplate(name) {
-  const pascal = toPascalCase(name);
-  const exportName = `${pascal}Routes`;
+function getFeatureSchemaTemplate(name) {
   const camel = camelCase(name);
-  const dashed = dashCase(name);
-  const listSchemaName = `${camel}ListSchema`;
-  return `import { createRoute, type FastifyRouteDefinition } from "@fast-next/fastify-router";
-import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
-import { z } from "zod";
+  const pascal = toPascalCase(name);
+  return `import { z } from "zod";
 
-const ${camel}Schema = z.object({
+export const ${camel}Schema = z.object({
   id: z.string(),
   name: z.string(),
+  status: z.enum(["draft", "active", "archived"]),
 });
 
-const ${listSchemaName} = {
+export const list${pascal}Schema = {
   response: z.object({
     items: z.array(${camel}Schema),
   }),
 } as const;
 
+export const create${pascal}Schema = {
+  body: z.object({
+    name: z.string().min(3),
+    status: ${camel}Schema.shape.status.optional().default("draft"),
+  }),
+  response: {
+    201: ${camel}Schema,
+  },
+} as const;
+`;
+}
+
+function getFeatureServiceTemplate(name) {
+  const pascal = toPascalCase(name);
+  const camel = camelCase(name);
+  return `import type { z } from "zod";
+import { ${camel}Schema } from "./schemas";
+
+type ${pascal} = z.infer<typeof ${camel}Schema>;
+
+const data: ${pascal}[] = [
+  { id: "${camel}-1", name: "Sample ${pascal} A", status: "draft" },
+  { id: "${camel}-2", name: "Sample ${pascal} B", status: "active" },
+];
+
+export async function list${pascal}() {
+  return { items: data };
+}
+
+export async function create${pascal}(input: Pick<${pascal}, "name" | "status">) {
+  const next: ${pascal} = {
+    id: `${camel}-\${Date.now()}`,
+    name: input.name,
+    status: input.status ?? "draft",
+  };
+  data.push(next);
+  return next;
+}
+`;
+}
+
+function getFeatureRoutesTemplate(name) {
+  const pascal = toPascalCase(name);
+  const exportName = `${pascal}Routes`;
+  const resource = dashCase(name);
+  return `import { createRoute, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { list${pascal}Schema, create${pascal}Schema } from "./schemas";
+import { list${pascal}, create${pascal} } from "./service";
+
 export const ${exportName} = [
   createRoute({
     method: "GET",
-    path: "/${dashed}",
-    resource: "${dashed}",
+    path: "/${resource}",
+    resource: "${resource}",
     operation: "list",
-    schema: ${listSchemaName},
-    handler: (async () => ({ items: [] })) satisfies TypedRouteHandler<typeof ${listSchemaName}>,
+    schema: list${pascal}Schema,
+    handler: (async () => list${pascal}()) satisfies TypedRouteHandler<typeof list${pascal}Schema>,
+  }),
+  createRoute({
+    method: "POST",
+    path: "/${resource}",
+    resource: "${resource}",
+    operation: "create",
+    schema: create${pascal}Schema,
+    handler: (async (request, reply) => {
+      const created = await create${pascal}(request.body);
+      reply.code(201);
+      return created;
+    }) satisfies TypedRouteHandler<typeof create${pascal}Schema>,
   }),
 ] as const satisfies readonly FastifyRouteDefinition[];
+`;
+}
+
+function getFeatureTestTemplate(name) {
+  const resource = dashCase(name);
+  const pascal = toPascalCase(name);
+  return `// Example Vitest suite for the ${resource} feature.
+// Delete or adapt based on your testing stack.
+// import { describe, it, expect } from "vitest";
+// import { api } from "@/server/api";
+
+// describe("${pascal} routes", () => {
+//   it("lists ${resource}", async () => {
+//     const result = await api.${resource}.list.query();
+//     expect(result.statusCode).toBe(200);
+//   });
+// });
 `;
 }
 
@@ -315,6 +468,306 @@ function dashCase(value) {
 function camelCase(value) {
   const pascal = toPascalCase(value);
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
+}
+
+function createPrompter(enabled) {
+  if (!enabled) {
+    return {
+      enabled: false,
+      async ask(_question, defaultValue) {
+        return defaultValue;
+      },
+      close() {},
+    };
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return {
+    enabled: true,
+    async ask(question, defaultValue) {
+      const suffix = defaultValue ? ` (${defaultValue})` : "";
+      const answer = await rl.question(`${question}${suffix}: `);
+      const trimmed = answer.trim();
+      return trimmed || defaultValue;
+    },
+    close() {
+      rl.close();
+    },
+  };
+}
+
+async function resolveInstallChoice(value, prompter, projectRoot) {
+  if (value) {
+    if (value === true) return "skip";
+    const normalizedValue = typeof value === "string" ? value.toLowerCase() : value;
+    if (normalizedValue === "auto") {
+      return detectPackageManager(projectRoot) ?? "skip";
+    }
+    if (["pnpm", "npm", "yarn", "bun", "skip"].includes(normalizedValue)) {
+      return normalizedValue;
+    }
+    return "skip";
+  }
+
+  if (!prompter.enabled) {
+    return "skip";
+  }
+
+  const answer = await prompter.ask(
+    "Install dependencies now? (pnpm/npm/yarn/bun/skip)",
+    detectPackageManager(projectRoot) ?? "skip"
+  );
+  const normalized = answer.trim().toLowerCase();
+  if (["pnpm", "npm", "yarn", "bun"].includes(normalized)) {
+    return normalized;
+  }
+  return "skip";
+}
+
+async function resolveBooleanOption(value, prompter, question, defaultValue) {
+  if (typeof value === "string") {
+    return value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (!prompter.enabled) {
+    return defaultValue;
+  }
+
+  const defaultLabel = defaultValue ? "Y/n" : "y/N";
+  const answer = await prompter.ask(`${question} ${defaultLabel}`, defaultValue ? "y" : "n");
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+function detectPackageManager(projectRoot) {
+  const checks = [
+    { file: "pnpm-lock.yaml", manager: "pnpm" },
+    { file: "package-lock.json", manager: "npm" },
+    { file: "yarn.lock", manager: "yarn" },
+    { file: "bun.lockb", manager: "bun" },
+  ];
+  for (const entry of checks) {
+    if (fsSyncExists(path.join(projectRoot, entry.file))) {
+      return entry.manager;
+    }
+  }
+  return null;
+}
+
+function fsSyncExists(filePath) {
+  try {
+    fsSync.accessSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensurePackageJsonDeps(projectRoot, deps) {
+  const packageJsonPath = path.join(projectRoot, "package.json");
+  if (!(await fileExists(packageJsonPath))) {
+    console.warn(
+      `[warn] package.json not found at ${packageJsonPath}. Skipping dependency injection.`
+    );
+    return;
+  }
+  const raw = await fs.readFile(packageJsonPath, "utf8");
+  const pkg = JSON.parse(raw);
+  pkg.dependencies = pkg.dependencies ?? {};
+  let changed = false;
+  deps.forEach((dep) => {
+    if (!pkg.dependencies[dep]) {
+      pkg.dependencies[dep] = "latest";
+      changed = true;
+    }
+  });
+  if (changed) {
+    await fs.writeFile(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
+    console.log(`[update] package.json (added ${deps.length} deps)`);
+  }
+}
+
+async function installDependencies(manager, cwd) {
+  const config = INSTALL_COMMANDS[manager];
+  if (!config) {
+    console.warn(`[warn] Unsupported package manager '${manager}', skipping install.`);
+    return;
+  }
+  console.log(`\nInstalling dependencies with ${manager}...\n`);
+  await new Promise((resolve, reject) => {
+    const child = spawn(config.bin, config.args, {
+      cwd,
+      stdio: "inherit",
+    });
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${config.bin} exited with code ${code}`));
+      }
+    });
+    child.on("error", reject);
+  });
+}
+
+async function scaffoldQueueTemplate({ projectRoot, serverDirAbs, force }) {
+  const servicesDir = path.join(serverDirAbs, "services");
+  const queuesDir = path.join(serverDirAbs, "queues");
+  const workersDir = path.join(serverDirAbs, "workers");
+
+  await ensureDir(servicesDir);
+  await ensureDir(queuesDir);
+  await ensureDir(workersDir);
+
+  await writeFile(
+    path.join(servicesDir, "queue.service.ts"),
+    getQueueServiceTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(queuesDir, "email.queue.ts"),
+    getQueueExampleTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(workersDir, "email.worker.ts"),
+    getQueueWorkerTemplate(),
+    force
+  );
+
+  await writeFile(
+    path.join(workersDir, "index.ts"),
+    getQueueWorkerIndexTemplate(),
+    force
+  );
+
+  console.log("[queue] BullMQ scaffolding created");
+}
+
+function getQueueServiceTemplate() {
+  return `import { Queue, Worker, QueueScheduler, type JobsOptions, type QueueOptions, type WorkerOptions, type Job } from "bullmq";
+import IORedis from "ioredis";
+
+type QueueConfig = QueueOptions & {
+  defaultJobOptions?: JobsOptions;
+};
+
+const sharedConnection = new IORedis({
+  host: process.env.REDIS_HOST ?? "127.0.0.1",
+  port: Number(process.env.REDIS_PORT ?? 6379),
+  password: process.env.REDIS_PASSWORD || undefined,
+});
+
+export class QueueService {
+  private queues = new Map<string, Queue>();
+  private workers = new Map<string, Worker>();
+  private schedulers = new Map<string, QueueScheduler>();
+
+  constructor(private readonly connectionFactory = () => sharedConnection.duplicate()) {}
+
+  registerQueue<T = unknown>(name: string, options?: QueueConfig) {
+    if (this.queues.has(name)) {
+      return this.queues.get(name) as Queue<T>;
+    }
+
+    const queue = new Queue<T>(name, {
+      connection: this.connectionFactory(),
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1_000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+      ...options,
+    });
+
+    const scheduler = new QueueScheduler(name, {
+      connection: this.connectionFactory(),
+    });
+
+    this.queues.set(name, queue);
+    this.schedulers.set(name, scheduler);
+    return queue;
+  }
+
+  registerWorker<T = unknown>(
+    name: string,
+    processor: (job: Job<T>) => Promise<unknown>,
+    options?: WorkerOptions
+  ) {
+    if (!this.queues.has(name)) {
+      this.registerQueue<T>(name);
+    }
+
+    const worker = new Worker<T>(name, processor, {
+      connection: this.connectionFactory(),
+      concurrency: 5,
+      ...options,
+    });
+
+    worker.on("completed", (job) => {
+      console.log(`[queue:${name}] job ${job.id} completed`);
+    });
+
+    worker.on("failed", (job, error) => {
+      console.error(`[queue:${name}] job ${job?.id} failed`, error);
+    });
+
+    this.workers.set(name, worker);
+    return worker;
+  }
+}
+
+export const queueService = new QueueService();
+`;
+}
+
+function getQueueExampleTemplate() {
+  return `import { queueService } from "../services/queue.service";
+
+export type EmailPayload = {
+  to: string;
+  subject: string;
+  body: string;
+};
+
+export const emailQueue = queueService.registerQueue<EmailPayload>("email");
+
+export async function enqueueEmail(payload: EmailPayload) {
+  return emailQueue.add("send-email", payload, {
+    priority: 1,
+  });
+}
+`;
+}
+
+function getQueueWorkerTemplate() {
+  return `import type { Job } from "bullmq";
+import { queueService } from "../services/queue.service";
+import { emailQueue, type EmailPayload } from "../queues/email.queue";
+
+queueService.registerWorker<EmailPayload>(emailQueue.name, async (job: Job<EmailPayload>) => {
+  const { to, subject, body } = job.data;
+  console.log(`[worker] sending email to ${to}: ${subject}`);
+  console.log(body);
+  return { deliveredAt: Date.now() };
+});
+`;
+}
+
+function getQueueWorkerIndexTemplate() {
+  return `import "./email.worker";
+
+console.log("[workers] email worker registered");
+`;
 }
 
 await main();

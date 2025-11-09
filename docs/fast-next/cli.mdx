@@ -30,7 +30,8 @@ pnpm dlx create-fast-next init [projectDir] \
 - Sets up `src/server/fastify-app.ts`, `src/server/routes/index.ts`, and `src/server/api.ts`.
 - Adds placeholder markers (`FAST_NEXT_ROUTE_IMPORTS` / `FAST_NEXT_ROUTE_SPREAD`) so future features can be appended automatically.
 - Drops a starter health-check route so `/api/health` responds immediately.
-- Prints the list of dependencies you need to install (`fastify`, `zod`, and the `@fast-next/*` packages).
+- Prompts for directories when flags aren’t provided (disable with `--yes`).
+- Optionally updates `package.json` and installs all required dependencies when `--install auto|pnpm|npm|yarn|bun` is supplied (or when you accept the prompt).
 
 Options:
 
@@ -40,6 +41,17 @@ Options:
 | `--server <path>` | Directory that should hold `fastify-app.ts`, `routes`, etc. | `src/server` |
 | `--api <path>` | Relative path to the catch-all API route folder. | `<app>/api/[...fastify]` |
 | `--force` | Overwrite files if they already exist. | `false` |
+| `--install <pm>` | Install deps with `pnpm`, `npm`, `yarn`, `bun`, `auto`, or `skip`. | Prompt in TTY / `skip` in CI |
+| `--yes` | Skip interactive prompts (use defaults). | `false` |
+| `--with-queue` | Include BullMQ queue scaffolding (services, queues, workers). | Prompted |
+
+When `--with-queue` is enabled, the CLI generates:
+
+- `src/server/services/queue.service.ts` – central BullMQ registry with retry/backoff defaults.
+- `src/server/queues/email.queue.ts` – example producer helper.
+- `src/server/workers/email.worker.ts` + `workers/index.ts` – ready-to-run worker bootstrap.
+
+It also adds `bullmq`/`ioredis` to your dependencies and reminds you to configure `REDIS_HOST`, `REDIS_PORT`, and `REDIS_PASSWORD`.
 
 ### `feature`
 
@@ -47,7 +59,8 @@ Options:
 pnpm dlx create-fast-next feature projects --server src/server --dir .
 ```
 
-- Generates `src/server/features/<name>/routes.ts` with a typed `createRoute` starter.
+- Generates a full feature folder: `schemas.ts`, `service.ts`, `routes.ts`, and a stub `routes.test.ts`.
+- Route templates include both `GET /<resource>` and `POST /<resource>` handlers plus in-memory services you can replace.
 - Updates `src/server/routes/index.ts` by inserting the necessary import and spreading the new routes into the master array (using the scaffold markers added during `init`).
 
 Options:
