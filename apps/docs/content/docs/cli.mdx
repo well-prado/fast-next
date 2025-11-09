@@ -1,6 +1,6 @@
 ---
 title: CLI Reference
-description: `create-fast-next` scaffolds the Fastify bridge, optional modules, and follow-up commands.
+description: "create-fast-next scaffolds the Fastify bridge, optional modules, and follow-up commands."
 ---
 
 `create-fast-next` ships inside this repo (see `packages/create-fast-next`). Run it with any package manager:
@@ -14,20 +14,18 @@ bunx create-fast-next init .
 
 ## `init` Flags
 
-| Flag | Description | Default |
-| --- | --- | --- |
-| `--app <path>` | Location of the Next.js `app` directory. | `app` |
-| `--server <path>` | Directory for Fastify files (`fastify-app.ts`, `routes`, etc.). | `src/server` |
-| `--api <path>` | Catch-all API route (relative to project root). | `<app>/api/[...fastify]` |
-| `--install <pm>` | Install deps with `pnpm`, `npm`, `yarn`, `bun`, `auto`, or `skip`. | Prompt (TTY) / `skip` (CI) |
-| `--orm <none|prisma|drizzle>` | Generate ORM boilerplate. | Prompt (TTY) / `none` |
-| `--db <sqlite|postgres|mysql>` | Database driver when ORM is enabled. | Prompt (TTY) / `sqlite` |
-| `--with-queue` | Add BullMQ service, queue, workers. | Prompt |
-| `--with-cache <provider>` | Add cache service (`memory`, `redis`, `upstash`). | Prompt |
-| `--with-mcp` | Add MCP server, sample tool, Fastify routes. | Prompt |
-| `--with-docker` | Add `docker-compose.yml`, Dockerfiles, `.env.example`, and npm scripts. | Prompt |
-| `--force` | Overwrite existing files. | `false` |
-| `--yes` | Skip prompts entirely (great for AI/CI). | `false` |
+- `--app <path>` → Location of the Next.js `app` directory (default `app`).
+- `--server <path>` → Directory for Fastify files (default `src/server`).
+- `--api <path>` → Catch-all API route (default `<app>/api/[...fastify]`).
+- `--install <pm>` → Install deps with `pnpm`, `npm`, `yarn`, `bun`, `auto`, or `skip`.
+- `--orm <none|prisma|drizzle>` → Generate ORM boilerplate (default prompt / `none`).
+- `--db <sqlite|postgres|mysql>` → Database driver when ORM is enabled (default prompt / `sqlite`).
+- `--with-queue` → Add BullMQ service, queue, and workers.
+- `--with-cache <provider>` → Add cache service (`memory`, `redis`, `upstash`).
+- `--with-mcp` → Add MCP server, sample tool, Fastify routes.
+- `--with-docker` → Add `docker-compose.yml`, Dockerfiles, `.env.example`, and npm scripts.
+- `--force` → Overwrite existing files.
+- `--yes` → Skip prompts (great for AI/CI).
 
 ### What Gets Generated
 
