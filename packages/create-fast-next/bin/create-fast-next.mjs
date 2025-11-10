@@ -56,6 +56,9 @@ const CACHE_DEPENDENCIES = {
 };
 const AUTH_DEPENDENCIES = ["@fast-next/better-auth"];
 const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
+const DEP_VERSION_OVERRIDES = {
+  zod: "^3.25.0",
+};
 const INSTALL_COMMANDS = {
   pnpm: {
     bin: "pnpm",
@@ -961,7 +964,7 @@ async function ensurePackageJsonDeps(projectRoot, deps) {
   let changed = false;
   deps.forEach((dep) => {
     if (!pkg.dependencies[dep]) {
-      pkg.dependencies[dep] = "latest";
+      pkg.dependencies[dep] = DEP_VERSION_OVERRIDES[dep] ?? "latest";
       changed = true;
     }
   });
