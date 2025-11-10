@@ -1,8 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type {
-  InjectOptions,
-  Response as LightMyRequestResponse,
-} from "light-my-request";
+import type { InjectOptions, Response as LightMyRequestResponse } from "light-my-request";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { convertNextHeaders } from "./headers";
@@ -21,7 +18,7 @@ export interface FastifyNextAdapterOptions {
 export async function handleNextRequest(
   req: NextRequest,
   fastifyApp: FastifyInstance,
-  options: FastifyNextAdapterOptions = {}
+  options: FastifyNextAdapterOptions = {},
 ): Promise<NextResponse> {
   try {
     await fastifyApp.ready();
@@ -41,10 +38,7 @@ export async function handleNextRequest(
     return convertToNextResponse(response);
   } catch (error) {
     console.error("[fastify-next-adapter] Failed to handle request:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 

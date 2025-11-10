@@ -22,6 +22,7 @@ bunx create-fast-next init .
 - `--db <sqlite|postgres|mysql>` → Database driver when ORM is enabled (default prompt / `sqlite`).
 - `--with-queue` → Add BullMQ service, queue, and workers.
 - `--with-cache <provider>` → Add cache service (`memory`, `redis`, `upstash`).
+- `--with-auth` → Generate Better Auth service, Next.js catch-all route, and Fastify plugin wiring.
 - `--with-mcp` → Add MCP server, sample tool, Fastify routes.
 - `--with-docker` → Add `docker-compose.yml`, Dockerfiles, `.env.example`, and npm scripts.
 - `--force` → Overwrite existing files.
@@ -32,6 +33,7 @@ bunx create-fast-next init .
 - **Core bridge** – API catch-all route, `fastify-app.ts`, `server/api.ts`, and `routes/index.ts` with FAST_NEXT markers for future inserts.
 - **Queues (BullMQ)** – `queue.service.ts`, `queues/email.queue.ts`, `workers/email.worker.ts`, `workers/index.ts` + queue scripts.
 - **Cache service** – Memory provider + chosen provider (Redis or Upstash) with unified `CacheService` API.
+- **Better Auth** – `services/auth/better-auth.ts`, `app/api/auth/[...betterAuth]/route.ts`, Fastify plugin registration, and docs pointing to configuration steps.
 - **MCP** – `services/mcp/mcp.service.ts`, standalone server entry, `features/mcp/tools` with a sample tool and index, plus Fastify routes listing tools.
 - **Docker** – `docker-compose.yml` (app/postgres/redis/mcp with health checks), `Dockerfile`, `Dockerfile.mcp`, `.dockerignore`, `.env.example`, and `docker:*` npm scripts.
 - **ORMs** – Prisma or Drizzle schemas, clients, context wiring, and `.env` templates.
@@ -82,4 +84,4 @@ pnpm docker:down   # stop & remove containers
 pnpm docker:logs   # follow app logs
 ```
 
-Leverage these commands in automation (or AI workflows) by combining flags: e.g. `pnpm dlx create-fast-next init . --yes --orm prisma --db postgres --with-queue --with-cache redis --with-mcp --with-docker --install auto`.
+Leverage these commands in automation (or AI workflows) by combining flags: e.g. `pnpm dlx create-fast-next init . --yes --orm prisma --db postgres --with-auth --with-queue --with-cache redis --with-mcp --with-docker --install auto`.

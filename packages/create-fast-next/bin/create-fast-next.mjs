@@ -24,6 +24,7 @@ Options:
   --install <pm>     Install dependencies with pnpm|npm|yarn|bun|auto|skip (default: prompt in TTY)
   --with-queue       Include BullMQ queue scaffolding
   --with-cache <provider> Include cache service (memory|redis|upstash)
+  --with-auth        Include Better Auth bridge (Next.js handlers + Fastify plugin)
   --with-mcp         Include MCP server scaffolding
   --with-docker      Include docker-compose template
   --force            Overwrite existing files when scaffolding
@@ -51,6 +52,7 @@ const CACHE_DEPENDENCIES = {
   redis: ["ioredis"],
   upstash: ["@upstash/redis"],
 };
+const AUTH_DEPENDENCIES = ["@fast-next/better-auth"];
 const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
 const ORM_DEPENDENCIES = {
   prisma: ["prisma", "@prisma/client"],
@@ -148,6 +150,12 @@ async function runInit(options) {
     false
   );
   const cacheOption = await resolveCacheOption(options["with-cache"], prompter);
+  const authEnabled = await resolveBooleanOption(
+    options["with-auth"],
+    prompter,
+    "Add Better Auth scaffolding?",
+    false
+  );
   const mcpEnabled = await resolveBooleanOption(
     options["with-mcp"],
     prompter,
@@ -163,12 +171,15 @@ async function runInit(options) {
   const installChoice = await resolveInstallChoice(options.install, prompter, projectRoot);
   prompter.close();
 
+  const appDirAbs = path.join(projectRoot, appDir);
   const routeFile = path.join(projectRoot, apiDir, "route.ts");
   const serverDirAbs = path.join(projectRoot, serverDir);
   const fastifyAppFile = path.join(serverDirAbs, "fastify-app.ts");
   const routesFile = path.join(serverDirAbs, "routes", "index.ts");
   const apiHelperFile = path.join(serverDirAbs, "api.ts");
   const featuresDir = path.join(serverDirAbs, "features");
+  const authServiceFile = path.join(serverDirAbs, "services", "auth", "better-auth.ts");
+  const authRouteFile = path.join(appDirAbs, "api", "auth", "[...betterAuth]", "route.ts");
 
   await ensureDir(path.dirname(routeFile));
   await ensureDir(path.dirname(fastifyAppFile));
@@ -180,7 +191,17 @@ async function runInit(options) {
   );
 
   await writeFile(routeFile, getRouteHandlerTemplate(relativeImportToFastifyApp), force);
-  await writeFile(fastifyAppFile, getFastifyAppTemplate(), force);
+  const fastifyAuthImportPath = toImportPath(
+    path.relative(path.dirname(fastifyAppFile), authServiceFile)
+  );
+  await writeFile(
+    fastifyAppFile,
+    getFastifyAppTemplate({
+      includeAuth: authEnabled,
+      authImportPath: fastifyAuthImportPath,
+    }),
+    force
+  );
   await writeFile(routesFile, getRoutesIndexTemplate(), force);
   await writeFile(apiHelperFile, getServerApiTemplate(), force);
   await writeFile(path.join(featuresDir, ".gitkeep"), "", false);
@@ -210,6 +231,18 @@ async function runInit(options) {
     deps.forEach((dep) => dependencySet.add(dep));
     postInitNotes.push(
       `Cache provider '${cacheOption.provider}' scaffolded. Configure env vars (see src/server/services/cache/cache.service.ts).`
+    );
+  }
+
+  if (authEnabled) {
+    await scaffoldAuthTemplate({
+      authRouteFile,
+      authServiceFile,
+      force,
+    });
+    AUTH_DEPENDENCIES.forEach((dep) => dependencySet.add(dep));
+    postInitNotes.push(
+      "Better Auth scaffolding created. Update services/auth/better-auth.ts with your adapter, secrets, and providers before enabling the routes."
     );
   }
 
@@ -403,13 +436,23 @@ export const HEAD = handle;
 `;
 }
 
-function getFastifyAppTemplate() {
+function getFastifyAppTemplate(options = {}) {
+  const { includeAuth = false, authImportPath } = options;
+  const authImports =
+    includeAuth && authImportPath
+      ? `import { createFastifyBetterAuthPlugin } from "@fast-next/better-auth";
+import { auth } from "${authImportPath}";\n\n`
+      : "";
+  const pluginsLine =
+    includeAuth && authImportPath
+      ? "    plugins: [createFastifyBetterAuthPlugin({ auth })],\n"
+      : "";
+
   return `import { getFastifyApp } from "@fast-next/fastify-app-factory";
 import { registerRoutes } from "./routes";
-
-export function getAppInstance() {
+${authImports}export function getAppInstance() {
   return getFastifyApp({
-    configureApp: registerRoutes,
+${pluginsLine}    configureApp: registerRoutes,
   });
 }
 `;
@@ -462,6 +505,39 @@ const builtRouter = {
 export const serverCaller = createServerCaller(builtRouter);
 export const api = createServerClient(serverRoutes, serverCaller);
 export const queryClient = new FastifyQueryClient();
+`;
+}
+
+function getBetterAuthServiceTemplate() {
+  return `import type { BetterAuthOptions } from "@fast-next/better-auth";
+import { createFastNextAuth } from "@fast-next/better-auth";
+
+/**
+ * Configure Better Auth adapters, providers, and secrets here.
+ * Docs: https://better-auth.com/docs
+ */
+const authOptions = {
+  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  plugins: [],
+} satisfies Partial<BetterAuthOptions>;
+
+export const auth = createFastNextAuth(authOptions as BetterAuthOptions);
+`;
+}
+
+function getBetterAuthRouteTemplate(authImportPath) {
+  return `import { createNextAuthHandler } from "@fast-next/better-auth";
+import { auth } from "${authImportPath}";
+
+const handlers = createNextAuthHandler({ auth });
+
+export const GET = handlers.GET;
+export const HEAD = handlers.HEAD;
+export const POST = handlers.POST;
+export const PUT = handlers.PUT;
+export const PATCH = handlers.PATCH;
+export const DELETE = handlers.DELETE;
+export const OPTIONS = handlers.OPTIONS;
 `;
 }
 
@@ -886,6 +962,17 @@ async function scaffoldCacheTemplate({ serverDirAbs, force, provider }) {
   const filePath = path.join(cacheDir, "cache.service.ts");
   await writeFile(filePath, getCacheServiceTemplate(provider), force);
   console.log(`[cache] ${provider} cache service created`);
+}
+
+async function scaffoldAuthTemplate({ authRouteFile, authServiceFile, force }) {
+  await ensureDir(path.dirname(authServiceFile));
+  await writeFile(authServiceFile, getBetterAuthServiceTemplate(), force);
+  const authImportPath = toImportPath(
+    path.relative(path.dirname(authRouteFile), authServiceFile)
+  );
+  await ensureDir(path.dirname(authRouteFile));
+  await writeFile(authRouteFile, getBetterAuthRouteTemplate(authImportPath), force);
+  console.log("[auth] Better Auth bridge created");
 }
 
 async function scaffoldCustomQueue({ projectRoot, name, serverDir, force }) {

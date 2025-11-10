@@ -1,0 +1,118 @@
+---
+title: Authentication
+description: Bridge Better Auth into both Next.js route handlers and Fastify with a single package.
+---
+
+Fast Next bundles a thin helper package, `@fast-next/better-auth`, so you can keep the official **Better Auth** SDK up to date while still enjoying framework-specific helpers:
+
+- automatic `next-cookies` plugin injection (opt-out) so cookies flow through App Router.
+- Next.js catch-all handler factory (`createNextAuthHandler`) so you don't need to re-export HTTP verbs manually.
+- Fastify plugin (`createFastifyBetterAuthPlugin`) that proxies every `/api/auth/*` request to `auth.handler`, mirrors headers/cookies, and decorates the Fastify instance/request with the shared `auth` object.
+
+## Scaffold via CLI
+
+```bash
+pnpm dlx create-fast-next init . --with-auth --yes
+```
+
+The flag creates:
+
+- `src/server/services/auth/better-auth.ts` – your single source of truth for Better Auth options.
+- `app/api/auth/[...betterAuth]/route.ts` – a Next.js catch-all wired through `createNextAuthHandler`.
+- `src/server/fastify-app.ts` – updated to register the Fastify plugin so `/api/auth/*` works over HTTP and `request.betterAuth` is available everywhere.
+
+## Configure the Auth Service
+
+```ts
+import type { BetterAuthOptions } from "@fast-next/better-auth";
+import { createFastNextAuth } from "@fast-next/better-auth";
+
+const authOptions = {
+  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  database: {
+    adapter: /* e.g. prismaAdapter({ client }) */,
+  },
+  plugins: [
+    // emailPassword(), oauth(), organization(), etc.
+  ],
+} satisfies Partial<BetterAuthOptions>;
+
+export const auth = createFastNextAuth(authOptions as BetterAuthOptions);
+```
+
+- `createFastNextAuth` re-exports `betterAuth` and automatically includes the `next-cookies` plugin. Disable it via `{ includeNextCookies: false }` if you want full manual control.
+- Everything else is 100% upstream Better Auth config—adapters, providers, rate limits, telemetry, etc.
+
+## Next.js Route Handler
+
+```ts
+import { createNextAuthHandler } from "@fast-next/better-auth";
+import { auth } from "@/server/services/auth/better-auth";
+
+const handlers = createNextAuthHandler({ auth });
+
+export const GET = handlers.GET;
+export const POST = handlers.POST;
+export const OPTIONS = handlers.OPTIONS;
+export const PUT = handlers.PUT;
+export const PATCH = handlers.PATCH;
+export const DELETE = handlers.DELETE;
+export const HEAD = handlers.HEAD;
+```
+
+The helper wraps `toNextJsHandler` from Better Auth and mirrors all verbs so `/api/auth/*` works for preflight, HEAD, and any additional HTTP appliances without duplicating boilerplate.
+
+## Fastify Plugin
+
+`fastify-app.ts` is updated automatically:
+
+```ts
+import { createFastifyBetterAuthPlugin } from "@fast-next/better-auth";
+import { auth } from "./services/auth/better-auth";
+
+export function getAppInstance() {
+  return getFastifyApp({
+    plugins: [
+      createFastifyBetterAuthPlugin({
+        auth,
+        mountPath: "/api/auth",      // change if you prefer another prefix
+        logErrors: true,             // disable to silence proxy failures
+      }),
+    ],
+    configureApp: registerRoutes,
+  });
+}
+```
+
+The plugin:
+
+1. Registers both `/api/auth` and `/api/auth/*` routes and proxies them into `auth.handler`.
+2. Copies headers and bodies (JSON, form-data, buffers) into a `Request` object and preserves `Set-Cookie` headers on the response.
+3. Decorates `fastify` and every `request` with `betterAuth`, so inside any handler you can call `request.betterAuth?.api.sessions.list()` or tap into `auth.$Infer`.
+
+Need to serve auth endpoints elsewhere? Change `mountPath` (e.g. `/internal/auth`) or register multiple plugins with different prefixes.
+
+## Using the Auth Object Elsewhere
+
+Because the plugin decorates the instance/request, you can reuse the same singleton without extra imports:
+
+```ts
+// In Fastify routes
+app.get("/me", async (request, reply) => {
+  const auth = request.betterAuth!;
+  const session = await auth.api.getSession({ headers: request.headers });
+  return { user: session.user };
+});
+```
+
+Inside server callers or other modules, import the `auth` singleton directly and call `auth.api.*` or `auth.$Infer.Session`.
+
+## Manual Setup (Without the Flag)
+
+Already initialized your project? Simply:
+
+1. Install the package: `pnpm add @fast-next/better-auth`.
+2. Create the service and route files above.
+3. Update `fastify-app.ts` to register `createFastifyBetterAuthPlugin`.
+
+That's it—the helpers stay thin so you can always fall back to the underlying Better Auth SDK and docs whenever you need deeper customization.

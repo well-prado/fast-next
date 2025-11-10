@@ -1,10 +1,10 @@
-import Fastify from "fastify";
 import type {
   FastifyInstance,
   FastifyPluginAsync,
   FastifyPluginCallback,
   FastifyServerOptions,
 } from "fastify";
+import Fastify from "fastify";
 
 type AcceptablePlugin = FastifyPluginAsync | FastifyPluginCallback;
 
@@ -21,13 +21,10 @@ type FastifyGlobal = typeof globalThis & {
 
 const globalFastify = globalThis as FastifyGlobal;
 
-let instance: FastifyInstance | null =
-  globalFastify.__FAST_NEXT_FASTIFY_APP__ ?? null;
+let instance: FastifyInstance | null = globalFastify.__FAST_NEXT_FASTIFY_APP__ ?? null;
 let instancePromise: Promise<FastifyInstance> | null = null;
 
-export async function getFastifyApp(
-  config?: FastifyAppConfig
-): Promise<FastifyInstance> {
+export async function getFastifyApp(config?: FastifyAppConfig): Promise<FastifyInstance> {
   if (instance) {
     return instance;
   }
@@ -45,18 +42,10 @@ export async function getFastifyApp(
   return instance;
 }
 
-async function buildFastifyApp(
-  config?: FastifyAppConfig
-): Promise<FastifyInstance> {
-  const {
-    plugins = [],
-    configureApp,
-    logger,
-    ...restOptions
-  } = config ?? {};
+async function buildFastifyApp(config?: FastifyAppConfig): Promise<FastifyInstance> {
+  const { plugins = [], configureApp, logger, ...restOptions } = config ?? {};
 
-  const resolvedLogger =
-    logger ?? (process.env.NODE_ENV === "development" ? true : false);
+  const resolvedLogger = logger ?? process.env.NODE_ENV === "development";
 
   const app = Fastify({
     ...restOptions,
