@@ -1,7 +1,7 @@
 {
   "name": "@fast-next/fastify-next-adapter",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "exports": {
     ".": {
@@ -27,5 +27,24 @@
     "next": "^16.0.1",
     "typescript": "5.9.2",
     "@biomejs/biome": "^2.3.3"
+  },
+  "description": "Bridge Next.js API routes to Fastify instances.",
+  "keywords": [
+    "fastify",
+    "nextjs",
+    "adapter"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/well-prado/fast-next",
+    "directory": "packages/fastify-next-adapter"
+  },
+  "bugs": {
+    "url": "https://github.com/well-prado/fast-next/issues"
+  },
+  "homepage": "https://github.com/well-prado/fast-next#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

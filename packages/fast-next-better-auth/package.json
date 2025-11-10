@@ -1,7 +1,7 @@
 {
   "name": "@fast-next/better-auth",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "exports": {
     ".": {
@@ -26,5 +26,25 @@
   },
   "scripts": {
     "lint": "biome check ."
+  },
+  "description": "Better Auth bridge helpers for Fast Next projects.",
+  "keywords": [
+    "fast-next",
+    "better-auth",
+    "fastify",
+    "nextjs"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/well-prado/fast-next",
+    "directory": "packages/fast-next-better-auth"
+  },
+  "bugs": {
+    "url": "https://github.com/well-prado/fast-next/issues"
+  },
+  "homepage": "https://github.com/well-prado/fast-next#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -209,16 +209,16 @@ importers:
   packages/fastify-browser-client:
     dependencies:
       '@fast-next/fastify-query-client':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-query-client
       '@fast-next/fastify-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-router
       '@fast-next/fastify-server-caller':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-server-caller
       '@fast-next/fastify-zod-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-zod-router
       react:
         specifier: '>=18.0.0'
@@ -267,13 +267,13 @@ importers:
   packages/fastify-query-client:
     dependencies:
       '@fast-next/fastify-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-router
       '@fast-next/fastify-server-caller':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-server-caller
       '@fast-next/fastify-zod-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-zod-router
     devDependencies:
       '@biomejs/biome':
@@ -292,7 +292,7 @@ importers:
   packages/fastify-router:
     dependencies:
       '@fast-next/fastify-zod-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-zod-router
     devDependencies:
       '@biomejs/biome':
@@ -317,7 +317,7 @@ importers:
   packages/fastify-server-caller:
     dependencies:
       '@fast-next/fastify-zod-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-zod-router
     devDependencies:
       '@biomejs/biome':
@@ -339,16 +339,16 @@ importers:
   packages/fastify-server-client:
     dependencies:
       '@fast-next/fastify-query-client':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-query-client
       '@fast-next/fastify-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-router
       '@fast-next/fastify-server-caller':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-server-caller
       '@fast-next/fastify-zod-router':
-        specifier: workspace:*
+        specifier: ^0.1.0
         version: link:../fastify-zod-router
     devDependencies:
       '@biomejs/biome':

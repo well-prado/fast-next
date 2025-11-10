@@ -27,7 +27,7 @@ bunx create-fast-next init .
 - `--with-docker` → Add `docker-compose.yml`, Dockerfiles, `.env.example`, and npm scripts.
 - `--force` → Overwrite existing files.
 - `--yes` → Skip prompts (great for AI/CI).
-- **Interactive tip** – When running without `--yes`, the CLI opens a single multi-select for optional modules. Use `↑`/`↓` to navigate, press `space` to toggle queue/cache/auth/MCP/Docker, and hit `enter` to confirm.
+- **Interactive tip** – Without `--yes` every prompt is arrow-driven: pick the database first, then the ORM, and use the multi-select (↑/↓ + space) to toggle queue/cache/auth/MCP/Docker before hitting enter. Flip `--yes` (or pass flags) if you need a fully non-interactive run.
 
 ### What Gets Generated
 

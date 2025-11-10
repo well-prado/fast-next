@@ -132,7 +132,7 @@ function parseArgs(args) {
 }
 
 async function runInit(options) {
-  const interactive = process.stdin.isTTY && !options.yes;
+  const interactive = !options.yes;
   const projectDirInput =
     options._[0] ?? (await promptInput("Project directory", ".", interactive));
   const projectRoot = path.resolve(process.cwd(), projectDirInput);
@@ -708,28 +708,33 @@ function camelCase(value) {
 }
 
 async function resolveOrmOption(ormFlag, dbFlag, interactive) {
-  const ormValue =
-    ormFlag ??
-    (await promptSelect("Select ORM", ["none", "prisma", "drizzle"], "none", interactive));
-  const orm = ormValue.toLowerCase();
-  if (!["none", "prisma", "drizzle"].includes(orm)) {
-    throw new Error(`Unsupported orm '${orm}'. Choose none, prisma, or drizzle.`);
-  }
-  if (orm === "none") {
-    return { orm: "none", db: "sqlite", dependencies: [], notes: [] };
-  }
-
   const dbValue =
     dbFlag ??
     (await promptSelect(
-      "Select database (sqlite/postgres/mysql)",
-      ["sqlite", "postgres", "mysql"],
+      "Select database",
+      ["none", "sqlite", "postgres", "mysql"],
       "sqlite",
       interactive,
     ));
   const db = dbValue.toLowerCase();
-  if (!["sqlite", "postgres", "mysql"].includes(db)) {
-    throw new Error(`Unsupported database '${db}'. Choose sqlite, postgres, or mysql.`);
+  if (!["none", "sqlite", "postgres", "mysql"].includes(db)) {
+    throw new Error(`Unsupported database '${db}'. Choose none, sqlite, postgres, or mysql.`);
+  }
+
+  const ormInitial = ormFlag ? ormFlag.toLowerCase() : undefined;
+  if (ormInitial === "none" || db === "none") {
+    return { orm: "none", db: "sqlite", dependencies: [], notes: [] };
+  }
+
+  const ormValue =
+    ormFlag ??
+    (await promptSelect("Select ORM", ["prisma", "drizzle", "none"], "drizzle", interactive));
+  const orm = ormValue.toLowerCase();
+  if (!["prisma", "drizzle", "none"].includes(orm)) {
+    throw new Error(`Unsupported orm '${orm}'. Choose prisma, drizzle, or none.`);
+  }
+  if (orm === "none") {
+    return { orm: "none", db, dependencies: [], notes: [] };
   }
 
   const dependencies = new Set();

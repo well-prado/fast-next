@@ -1,7 +1,7 @@
 {
   "name": "create-fast-next",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "bin": {
     "create-fast-next": "./bin/create-fast-next.mjs"
@@ -18,5 +18,25 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.3"
+  },
+  "description": "Scaffold Fast Next (Fastify + Next.js) apps with a single CLI.",
+  "keywords": [
+    "fast-next",
+    "fastify",
+    "nextjs",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/well-prado/fast-next",
+    "directory": "packages/create-fast-next"
+  },
+  "bugs": {
+    "url": "https://github.com/well-prado/fast-next/issues"
+  },
+  "homepage": "https://github.com/well-prado/fast-next#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

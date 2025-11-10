@@ -1,7 +1,7 @@
 {
   "name": "@fast-next/fastify-query-client",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "exports": {
     ".": {
@@ -16,14 +16,33 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@fast-next/fastify-router": "workspace:*",
-    "@fast-next/fastify-server-caller": "workspace:*",
-    "@fast-next/fastify-zod-router": "workspace:*"
+    "@fast-next/fastify-router": "^0.1.0",
+    "@fast-next/fastify-server-caller": "^0.1.0",
+    "@fast-next/fastify-zod-router": "^0.1.0"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
     "typescript": "5.9.2",
     "@biomejs/biome": "^2.3.3"
+  },
+  "description": "Shared query client powering Fast Next server and browser callers.",
+  "keywords": [
+    "fastify",
+    "query",
+    "client"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/well-prado/fast-next",
+    "directory": "packages/fastify-query-client"
+  },
+  "bugs": {
+    "url": "https://github.com/well-prado/fast-next/issues"
+  },
+  "homepage": "https://github.com/well-prado/fast-next#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }
