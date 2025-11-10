@@ -1,5 +1,3 @@
-import type { OperationDescriptor } from "./types";
-
 export type QueryStatus = "idle" | "loading" | "success" | "error";
 
 export interface CacheEntry<TData = unknown> {
@@ -60,11 +58,7 @@ export class FastifyQueryClient {
     return this.cache.get(key)?.data as TData | undefined;
   }
 
-  setQueryData<TData = unknown>(
-    key: string,
-    data: TData,
-    status: QueryStatus = "success"
-  ) {
+  setQueryData<TData = unknown>(key: string, data: TData, status: QueryStatus = "success") {
     const entry: CacheEntry<TData> = {
       status,
       data,
@@ -89,7 +83,7 @@ export class FastifyQueryClient {
   async fetchQuery<TData = unknown>(
     key: string,
     fetcher: () => Promise<TData>,
-    options: FetchQueryOptions = {}
+    options: FetchQueryOptions = {},
   ): Promise<TData> {
     const existing = this.cache.get(key) as CacheEntry<TData> | undefined;
     const now = Date.now();
@@ -139,15 +133,17 @@ export class FastifyQueryClient {
     }
   }
 
-  fetchMany(descriptors: {
-    key: string;
-    fetcher: () => Promise<unknown>;
-    options?: FetchQueryOptions;
-  }[]) {
+  fetchMany(
+    descriptors: {
+      key: string;
+      fetcher: () => Promise<unknown>;
+      options?: FetchQueryOptions;
+    }[],
+  ) {
     return Promise.all(
       descriptors.map((descriptor) =>
-        this.fetchQuery(descriptor.key, descriptor.fetcher, descriptor.options)
-      )
+        this.fetchQuery(descriptor.key, descriptor.fetcher, descriptor.options),
+      ),
     );
   }
 
@@ -170,7 +166,9 @@ export class FastifyQueryClient {
   private notify(key: string) {
     const listeners = this.listeners.get(key);
     if (!listeners) return;
-    listeners.forEach((listener) => listener());
+    listeners.forEach((listener) => {
+      listener();
+    });
   }
 
   private matchingKeys(filter?: QueryKeyFilter): string[] {

@@ -1,25 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { RouteCallOptions } from "@fast-next/fastify-server-caller";
-import type {
-  FastifyRouteDefinition,
-  RouteFor,
-  OperationsForResource,
-  ResourceNames,
-} from "@fast-next/fastify-router";
-import type { HttpMethod } from "@fast-next/fastify-zod-router";
 import {
-  FastifyQueryClient,
-  createQueryKey,
-  parseQueryKey,
   type CacheEntry,
+  createQueryKey,
+  FastifyQueryClient,
   type OperationDescriptor,
   type OperationResponse,
+  parseQueryKey,
   type QueryKeyFilter,
   type QueryStatus,
   type RouteReply,
 } from "@fast-next/fastify-query-client";
+import type {
+  FastifyRouteDefinition,
+  OperationsForResource,
+  ResourceNames,
+  RouteFor,
+} from "@fast-next/fastify-router";
+import type { RouteCallOptions } from "@fast-next/fastify-server-caller";
+import type { HttpMethod } from "@fast-next/fastify-zod-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface BrowserClientOptions {
   baseUrl?: string;
@@ -29,11 +29,9 @@ export interface BrowserClientOptions {
   queryClient?: FastifyQueryClient;
 }
 
-export function createBrowserClient<
-  TRoutes extends readonly FastifyRouteDefinition[]
->(
+export function createBrowserClient<TRoutes extends readonly FastifyRouteDefinition[]>(
   routes: TRoutes,
-  options: BrowserClientOptions = {}
+  options: BrowserClientOptions = {},
 ): BrowserClient<TRoutes> {
   const baseUrl = normalizeBaseUrl(options.baseUrl ?? "/api");
   const fetchImpl = resolveFetch(options.fetch);
@@ -51,7 +49,11 @@ export function createBrowserClient<
       fetchImpl,
     });
 
-    const bucket = client[resource] ?? (client[resource] = {});
+    let bucket = client[resource];
+    if (!bucket) {
+      bucket = {};
+      client[resource] = bucket;
+    }
     bucket[operation] = attachHooks(descriptor, {
       operation,
       resource,
@@ -65,20 +67,20 @@ export function createBrowserClient<
 
 function attachHooks<Route extends FastifyRouteDefinition>(
   descriptor: OperationDescriptor<Route>,
-  context: DescriptorContext<Route>
+  context: DescriptorContext<Route>,
 ): BrowserOperationDescriptor<Route> {
   if (isQueryDescriptor(descriptor)) {
     return {
       ...descriptor,
       useQuery: <TSelected = OperationResponse<Route>>(
-        options?: UseQueryOptions<Route, TSelected>
+        options?: UseQueryOptions<Route, TSelected>,
       ) => useRouteQuery(descriptor, context, options),
     } as unknown as BrowserOperationDescriptor<Route>;
   }
 
   if (!isMutationDescriptor(descriptor)) {
     throw new Error(
-      "[fastify-browser-client] Attempted to attach mutation hooks to a query descriptor"
+      "[fastify-browser-client] Attempted to attach mutation hooks to a query descriptor",
     );
   }
 
@@ -91,21 +93,18 @@ function attachHooks<Route extends FastifyRouteDefinition>(
 
 function createOperationDescriptor<Route extends FastifyRouteDefinition>(
   route: Route,
-  transport: TransportOptions
+  transport: TransportOptions,
 ): OperationDescriptor<Route> {
   const invoke: OperationInvoker<Route> = async (options) => {
     const response = await transport.fetchImpl(
       buildUrl(transport.baseUrl, route.path, options?.params, options?.query),
-      buildRequestInit(route.method, options, transport)
+      buildRequestInit(route.method, options, transport),
     );
 
     const payload = await toOperationResponse<Route>(response);
 
     if (!response.ok) {
-      throw new FastifyClientError(
-        `Request failed with status ${response.status}`,
-        payload
-      );
+      throw new FastifyClientError(`Request failed with status ${response.status}`, payload);
     }
 
     return payload;
@@ -127,7 +126,7 @@ function createOperationDescriptor<Route extends FastifyRouteDefinition>(
 function useRouteQuery<Route extends FastifyRouteDefinition, TSelected = OperationResponse<Route>>(
   descriptor: OperationDescriptor<Route> & { query: OperationInvoker<Route> },
   context: DescriptorContext<Route>,
-  options?: UseQueryOptions<Route, TSelected>
+  options?: UseQueryOptions<Route, TSelected>,
 ): UseQueryResult<Route, TSelected> {
   const {
     enabled = true,
@@ -142,10 +141,8 @@ function useRouteQuery<Route extends FastifyRouteDefinition, TSelected = Operati
   } = options ?? {};
 
   const requestSignature = useStableSignature(requestOptions);
-  const stableRequestOptions = useMemo(
-    () => requestOptions,
-    [requestSignature]
-  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stable options should only change when signature changes
+  const stableRequestOptions = useMemo(() => requestOptions, [requestSignature]);
   const key =
     providedKey ??
     createQueryKey({
@@ -187,11 +184,7 @@ function useRouteQuery<Route extends FastifyRouteDefinition, TSelected = Operati
 
   const execute = useCallback(() => {
     return context.queryClient
-      .fetchQuery(
-        key,
-        () => descriptor.query(stableRequestOptions),
-        { staleTime }
-      )
+      .fetchQuery(key, () => descriptor.query(stableRequestOptions), { staleTime })
       .then((response) => {
         onSuccess?.(response);
         return response;
@@ -200,15 +193,7 @@ function useRouteQuery<Route extends FastifyRouteDefinition, TSelected = Operati
         onError?.(error);
         throw error;
       });
-  }, [
-    context.queryClient,
-    descriptor,
-    key,
-    onError,
-    onSuccess,
-    stableRequestOptions,
-    staleTime,
-  ]);
+  }, [context.queryClient, descriptor, key, onError, onSuccess, stableRequestOptions, staleTime]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -255,7 +240,7 @@ function useRouteQuery<Route extends FastifyRouteDefinition, TSelected = Operati
 function useRouteMutation<Route extends FastifyRouteDefinition>(
   descriptor: OperationDescriptor<Route> & { mutate: OperationInvoker<Route> },
   context: DescriptorContext<Route>,
-  options?: UseMutationOptions<Route>
+  options?: UseMutationOptions<Route>,
 ): UseMutationResult<Route> {
   const [state, setState] = useState<MutationState<Route>>({ status: "idle" });
   const invalidateTargets = options?.invalidate;
@@ -275,14 +260,14 @@ function useRouteMutation<Route extends FastifyRouteDefinition>(
         throw error;
       }
     },
-    [descriptor, invalidateTargets, context.queryClient, options]
+    [descriptor, invalidateTargets, context.queryClient, options],
   );
 
   const mutate = useCallback(
     (variables?: RouteCallOptions<Route>) => {
       void mutateAsync(variables);
     },
-    [mutateAsync]
+    [mutateAsync],
   );
 
   const reset = useCallback(() => {
@@ -303,7 +288,7 @@ function useRouteMutation<Route extends FastifyRouteDefinition>(
 
 function runInvalidations(
   queryClient: FastifyQueryClient,
-  targets?: QueryKeyFilter | QueryKeyFilter[]
+  targets?: QueryKeyFilter | QueryKeyFilter[],
 ) {
   if (!targets) return;
   const list = Array.isArray(targets) ? targets : [targets];
@@ -312,10 +297,10 @@ function runInvalidations(
   }
 }
 
-function buildRequestInit(
+function buildRequestInit<Route extends FastifyRouteDefinition>(
   method: HttpMethod,
-  options: RouteCallOptions<any> | undefined,
-  transport: TransportOptions
+  options: RouteCallOptions<Route> | undefined,
+  transport: TransportOptions,
 ): RequestInit {
   const headers = {
     ...(transport.defaultHeaders ?? {}),
@@ -344,7 +329,7 @@ function buildUrl(
   baseUrl: string,
   path: string,
   params?: Record<string, unknown>,
-  query?: Record<string, unknown>
+  query?: Record<string, unknown>,
 ): string {
   const withParams = applyPathParams(path, params);
   const queryString = buildQueryString(query);
@@ -366,7 +351,9 @@ function buildQueryString(query?: Record<string, unknown>) {
   Object.entries(query).forEach(([key, value]) => {
     if (value === undefined || value === null) return;
     if (Array.isArray(value)) {
-      value.forEach((item) => params.append(key, String(item)));
+      value.forEach((item) => {
+        params.append(key, String(item));
+      });
     } else {
       params.append(key, String(value));
     }
@@ -380,7 +367,7 @@ function ensureStartsWithSlash(input: string) {
 }
 
 async function toOperationResponse<Route extends FastifyRouteDefinition>(
-  response: Response
+  response: Response,
 ): Promise<OperationResponse<Route>> {
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
@@ -445,19 +432,14 @@ function stableSerialize(value: unknown): unknown {
   return value;
 }
 
-const METHODS_WITH_BODY = new Set<HttpMethod>([
-  "POST",
-  "PUT",
-  "PATCH",
-  "DELETE",
-  "OPTIONS",
-]);
+const METHODS_WITH_BODY = new Set<HttpMethod>(["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 
-class FastifyClientError<Route extends FastifyRouteDefinition = FastifyRouteDefinition>
-  extends Error {
+class FastifyClientError<
+  Route extends FastifyRouteDefinition = FastifyRouteDefinition,
+> extends Error {
   constructor(
     message: string,
-    public readonly response: OperationResponse<Route>
+    public readonly response: OperationResponse<Route>,
   ) {
     super(message);
     this.name = "FastifyClientError";
@@ -475,7 +457,7 @@ function resolveFetch(provided?: typeof fetch): typeof fetch {
   const candidate = provided ?? globalThis.fetch;
   if (typeof candidate !== "function") {
     throw new Error(
-      "[fastify-browser-client] A fetch implementation is required in this environment"
+      "[fastify-browser-client] A fetch implementation is required in this environment",
     );
   }
 
@@ -500,11 +482,11 @@ interface MutationState<Route extends FastifyRouteDefinition> {
 }
 
 type OperationInvoker<Route extends FastifyRouteDefinition> = (
-  options?: RouteCallOptions<Route>
+  options?: RouteCallOptions<Route>,
 ) => Promise<OperationResponse<Route>>;
 
 function isQueryDescriptor<Route extends FastifyRouteDefinition>(
-  descriptor: OperationDescriptor<Route>
+  descriptor: OperationDescriptor<Route>,
 ): descriptor is OperationDescriptor<Route> & {
   query: OperationInvoker<Route>;
 } {
@@ -512,7 +494,7 @@ function isQueryDescriptor<Route extends FastifyRouteDefinition>(
 }
 
 function isMutationDescriptor<Route extends FastifyRouteDefinition>(
-  descriptor: OperationDescriptor<Route>
+  descriptor: OperationDescriptor<Route>,
 ): descriptor is OperationDescriptor<Route> & {
   mutate: OperationInvoker<Route>;
 } {
@@ -521,7 +503,7 @@ function isMutationDescriptor<Route extends FastifyRouteDefinition>(
 
 export interface UseQueryOptions<
   Route extends FastifyRouteDefinition,
-  TSelected = OperationResponse<Route>
+  TSelected = OperationResponse<Route>,
 > extends RouteCallOptions<Route> {
   enabled?: boolean;
   staleTime?: number;
@@ -535,7 +517,7 @@ export interface UseQueryOptions<
 
 export interface UseQueryResult<
   Route extends FastifyRouteDefinition,
-  TSelected = OperationResponse<Route>
+  TSelected = OperationResponse<Route>,
 > {
   data: TSelected | undefined;
   response: OperationResponse<Route> | undefined;
@@ -553,12 +535,9 @@ export interface UseMutationOptions<Route extends FastifyRouteDefinition> {
   invalidate?: QueryKeyFilter | QueryKeyFilter[];
   onSuccess?: (
     response: OperationResponse<Route>,
-    variables?: RouteCallOptions<Route>
+    variables?: RouteCallOptions<Route>,
   ) => void | Promise<void>;
-  onError?: (
-    error: unknown,
-    variables?: RouteCallOptions<Route>
-  ) => void | Promise<void>;
+  onError?: (error: unknown, variables?: RouteCallOptions<Route>) => void | Promise<void>;
 }
 
 export interface UseMutationResult<Route extends FastifyRouteDefinition> {
@@ -574,31 +553,23 @@ export interface UseMutationResult<Route extends FastifyRouteDefinition> {
   isError: boolean;
 }
 
-type BrowserOperationDescriptor<Route extends FastifyRouteDefinition> =
-  Route["method"] extends "GET" | "HEAD"
-    ? OperationDescriptor<Route> & {
-        useQuery: <TSelected = OperationResponse<Route>>(
-          options?: UseQueryOptions<Route, TSelected>
-        ) => UseQueryResult<Route, TSelected>;
-      }
-    : OperationDescriptor<Route> & {
-        useMutation: (
-          options?: UseMutationOptions<Route>
-        ) => UseMutationResult<Route>;
-      };
+type BrowserOperationDescriptor<Route extends FastifyRouteDefinition> = Route["method"] extends
+  | "GET"
+  | "HEAD"
+  ? OperationDescriptor<Route> & {
+      useQuery: <TSelected = OperationResponse<Route>>(
+        options?: UseQueryOptions<Route, TSelected>,
+      ) => UseQueryResult<Route, TSelected>;
+    }
+  : OperationDescriptor<Route> & {
+      useMutation: (options?: UseMutationOptions<Route>) => UseMutationResult<Route>;
+    };
 
 type BrowserClient<TRoutes extends readonly FastifyRouteDefinition[]> = {
   [R in ResourceNames<TRoutes>]: {
-    [O in OperationsForResource<TRoutes, R>]: BrowserOperationDescriptor<
-      RouteFor<TRoutes, R, O>
-    >;
+    [O in OperationsForResource<TRoutes, R>]: BrowserOperationDescriptor<RouteFor<TRoutes, R, O>>;
   };
 };
 
-export type {
-  BrowserClient,
-  BrowserOperationDescriptor,
-  OperationResponse,
-  RouteReply,
-};
+export type { BrowserClient, BrowserOperationDescriptor, OperationResponse, RouteReply };
 export { FastifyClientError, FastifyQueryClient, createQueryKey, parseQueryKey };

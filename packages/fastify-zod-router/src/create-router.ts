@@ -6,9 +6,9 @@ import type {
   RouteDefinition,
   RouteDefinitionWith,
   RouteMeta,
-  RouteSchema,
   RouterBuilder,
   RouterRegisterOptions,
+  RouteSchema,
 } from "./types";
 
 export function createRouter(): RouterBuilder {

@@ -1,6 +1,6 @@
 {
   "name": "@fast-next/fastify-query-client",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
   "exports": {
@@ -16,9 +16,9 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@fast-next/fastify-router": "^0.1.0",
-    "@fast-next/fastify-server-caller": "^0.1.0",
-    "@fast-next/fastify-zod-router": "^0.1.0"
+    "@fast-next/fastify-router": "^0.1.2",
+    "@fast-next/fastify-server-caller": "^0.1.2",
+    "@fast-next/fastify-zod-router": "^0.1.2"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",

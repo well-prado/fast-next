@@ -1,11 +1,14 @@
-import type { BuiltRouter, RouteDefinition, RouteGenericFromSchema, RouteSchema } from "@fast-next/fastify-zod-router";
+import type {
+  BuiltRouter,
+  RouteDefinition,
+  RouteGenericFromSchema,
+  RouteSchema,
+} from "@fast-next/fastify-zod-router";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 type RoutesOf<TRouter extends BuiltRouter> = TRouter["routes"][number];
 
-type SchemaOfRoute<TDef extends RouteDefinition> = TDef extends RouteDefinition<
-  infer TSchema
->
+type SchemaOfRoute<TDef extends RouteDefinition> = TDef extends RouteDefinition<infer TSchema>
   ? TSchema
   : RouteSchema;
 
@@ -16,10 +19,9 @@ type RequestPayload<TSchema extends RouteSchema> = {
   headers?: RouteGenericFromSchema<TSchema>["Headers"];
 };
 
-export type RouteCallOptions<TDef extends RouteDefinition> =
-  RequestPayload<SchemaOfRoute<TDef>> & {
-    context?: Record<string, unknown>;
-  };
+export type RouteCallOptions<TDef extends RouteDefinition> = RequestPayload<SchemaOfRoute<TDef>> & {
+  context?: Record<string, unknown>;
+};
 
 export type RouteCallResult<TDef extends RouteDefinition> = {
   statusCode: number;
@@ -29,30 +31,30 @@ export type RouteCallResult<TDef extends RouteDefinition> = {
 
 type RouterMethod<TRouter extends BuiltRouter> = RoutesOf<TRouter>["method"];
 
-type RouterPath<
-  TRouter extends BuiltRouter,
-  TMethod extends RouterMethod<TRouter>
-> = Extract<RoutesOf<TRouter>, { method: TMethod }>["path"];
+type RouterPath<TRouter extends BuiltRouter, TMethod extends RouterMethod<TRouter>> = Extract<
+  RoutesOf<TRouter>,
+  { method: TMethod }
+>["path"];
 
 type RouteMatch<
   TRouter extends BuiltRouter,
   TMethod extends RouterMethod<TRouter>,
-  TPath extends RouterPath<TRouter, TMethod>
+  TPath extends RouterPath<TRouter, TMethod>,
 > = Extract<RoutesOf<TRouter>, { method: TMethod; path: TPath }>;
 
 export type ServerCaller<TRouter extends BuiltRouter> = <
   TMethod extends RouterMethod<TRouter>,
-  TPath extends RouterPath<TRouter, TMethod>
+  TPath extends RouterPath<TRouter, TMethod>,
 >(
   method: TMethod,
   path: TPath,
-  options?: RouteCallOptions<RouteMatch<TRouter, TMethod, TPath>>
+  options?: RouteCallOptions<RouteMatch<TRouter, TMethod, TPath>>,
 ) => Promise<RouteCallResult<RouteMatch<TRouter, TMethod, TPath>>>;
 
 const ROUTE_KEY_SEPARATOR = "::";
 
 export function createServerCaller<TRouter extends BuiltRouter>(
-  router: TRouter
+  router: TRouter,
 ): ServerCaller<TRouter> {
   const routeMap = new Map<string, RouteDefinition>();
 
@@ -61,18 +63,12 @@ export function createServerCaller<TRouter extends BuiltRouter>(
     routeMap.set(key, route);
   });
 
-  const caller: ServerCaller<TRouter> = (async (
-    method,
-    path,
-    options
-  ) => {
+  const caller: ServerCaller<TRouter> = (async (method, path, options) => {
     const routeKey = buildRouteKey(method, path);
     const route = routeMap.get(routeKey);
 
     if (!route) {
-      throw new Error(
-        `[fastify-server-caller] Route not found: ${method} ${path}`
-      );
+      throw new Error(`[fastify-server-caller] Route not found: ${method} ${path}`);
     }
 
     return executeRoute(route, method, path, options);
@@ -85,16 +81,13 @@ async function executeRoute<TDef extends RouteDefinition>(
   route: TDef,
   method: string,
   path: string,
-  options?: RouteCallOptions<TDef>
+  options?: RouteCallOptions<TDef>,
 ): Promise<RouteCallResult<TDef>> {
   const schema = route.config.schema as SchemaOfRoute<TDef>;
   const request = createRequestStub(schema, method, path, options);
   const replyShim = createReplyStub();
 
-  const handlerResult = await route.config.handler(
-    request,
-    replyShim.reply as FastifyReply
-  );
+  const handlerResult = await route.config.handler(request, replyShim.reply as FastifyReply);
 
   const { statusCode, headers, payload, sent } = replyShim.collect();
   const body = sent ? payload : handlerResult;
@@ -110,7 +103,7 @@ function createRequestStub<TSchema extends RouteSchema>(
   _schema: TSchema,
   method: string,
   path: string,
-  options?: RequestPayload<TSchema> & { context?: Record<string, unknown> }
+  options?: RequestPayload<TSchema> & { context?: Record<string, unknown> },
 ): FastifyRequest<RouteGenericFromSchema<TSchema>> {
   const request: Record<string, unknown> = {
     method,

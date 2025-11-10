@@ -1,12 +1,19 @@
+import {
+  buildFastifySchema,
+  type HttpMethod,
+  type RouteDefinition,
+  type RouteMeta,
+  type RouteSchema,
+  type TypedRouteHandler,
+} from "@fast-next/fastify-zod-router";
 import type { FastifyInstance } from "fastify";
-import { buildFastifySchema, type HttpMethod, type RouteDefinition, type RouteMeta, type RouteSchema, type TypedRouteHandler } from "@fast-next/fastify-zod-router";
 
 export type FastifyRouteDefinition<
   TMethod extends HttpMethod = HttpMethod,
   TPath extends string = string,
   TSchema extends RouteSchema = RouteSchema,
   TResource extends string = string,
-  TOperation extends string = string
+  TOperation extends string = string,
 > = RouteDefinition<TSchema, RouteMeta<TResource, TOperation>> & {
   readonly method: TMethod;
   readonly path: TPath;
@@ -22,7 +29,7 @@ export function createRoute<
   const TPath extends string,
   TSchema extends RouteSchema,
   const TResource extends string,
-  const TOperation extends string
+  const TOperation extends string,
 >(config: {
   method: TMethod;
   path: TPath;
@@ -47,7 +54,7 @@ export function createRoute<
 
 export async function registerRoutes(
   app: FastifyInstance,
-  routes: readonly FastifyRouteDefinition[]
+  routes: readonly FastifyRouteDefinition[],
 ) {
   for (const route of routes) {
     await app.route({
@@ -59,15 +66,14 @@ export async function registerRoutes(
   }
 }
 
-export type RoutesUnion<TRoutes extends readonly FastifyRouteDefinition[]> =
-  TRoutes[number];
+export type RoutesUnion<TRoutes extends readonly FastifyRouteDefinition[]> = TRoutes[number];
 
 export type ResourceNames<TRoutes extends readonly FastifyRouteDefinition[]> =
   RoutesUnion<TRoutes>["config"]["meta"]["resource"];
 
 export type OperationsForResource<
   TRoutes extends readonly FastifyRouteDefinition[],
-  TResource extends ResourceNames<TRoutes>
+  TResource extends ResourceNames<TRoutes>,
 > = Extract<
   RoutesUnion<TRoutes>,
   { config: { meta: { resource: TResource } } }
@@ -76,7 +82,7 @@ export type OperationsForResource<
 export type RouteFor<
   TRoutes extends readonly FastifyRouteDefinition[],
   TResource extends ResourceNames<TRoutes>,
-  TOperation extends OperationsForResource<TRoutes, TResource>
+  TOperation extends OperationsForResource<TRoutes, TResource>,
 > = Extract<
   RoutesUnion<TRoutes>,
   { config: { meta: { resource: TResource; operation: TOperation } } }

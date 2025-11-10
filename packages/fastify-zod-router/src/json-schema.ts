@@ -22,11 +22,7 @@ export function buildFastifySchema(schema: RouteSchema): FastifySchema {
   return fastifySchema;
 }
 
-function assignIfPresent(
-  target: FastifySchema,
-  key: keyof FastifySchema,
-  schema?: AnyZod
-) {
+function assignIfPresent(target: FastifySchema, key: keyof FastifySchema, schema?: AnyZod) {
   if (!schema) return;
   const jsonSchema = convertZod(schema);
   if (jsonSchema) {
@@ -34,9 +30,7 @@ function assignIfPresent(
   }
 }
 
-function convertResponseSchema(
-  schema?: RouteResponseSchema
-): FastifySchema["response"] {
+function convertResponseSchema(schema?: RouteResponseSchema): FastifySchema["response"] {
   if (!schema) return undefined;
 
   if (isZodSchema(schema)) {
@@ -45,17 +39,14 @@ function convertResponseSchema(
     };
   }
 
-  const entries = Object.entries(schema).reduce<Record<string, unknown>>(
-    (acc, [status, value]) => {
-      if (!value) return acc;
-      const converted = convertZod(value);
-      if (converted) {
-        acc[status] = converted;
-      }
-      return acc;
-    },
-    {}
-  );
+  const entries = Object.entries(schema).reduce<Record<string, unknown>>((acc, [status, value]) => {
+    if (!value) return acc;
+    const converted = convertZod(value);
+    if (converted) {
+      acc[status] = converted;
+    }
+    return acc;
+  }, {});
 
   return Object.keys(entries).length ? entries : undefined;
 }

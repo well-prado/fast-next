@@ -1,11 +1,11 @@
 export {
-  FastifyQueryClient,
+  type CacheEntry,
   createQueryKey,
+  FastifyQueryClient,
   parseQueryKey,
+  type QueryKeyFilter,
   type QueryKeyInput,
   type QueryStatus,
-  type CacheEntry,
-  type QueryKeyFilter,
 } from "./query-client";
 export type {
   OperationDescriptor,

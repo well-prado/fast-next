@@ -6,10 +6,10 @@ export type {
   HttpMethod,
   RouteConfig,
   RouteDefinition,
+  RouteGenericFromSchema,
   RouteMeta,
-  RouteSchema,
   RouterBuilder,
   RouterRegisterOptions,
-  RouteGenericFromSchema,
+  RouteSchema,
   TypedRouteHandler,
 } from "./types";

@@ -12,6 +12,28 @@ yarn create fast-next init .
 bunx create-fast-next init .
 ```
 
+## Interactive Flow at a Glance
+
+When you run `pnpm dlx create-fast-next@latest init`, the CLI now opens a shadcn-style session:
+
+```text
+? Project directory · .
+? Next.js app directory · app
+? Server directory · src/server
+? API catch-all path · app/api/[...fastify]
+? Select database ▸ sqlite
+? Select ORM ▸ drizzle
+❯◉ BullMQ queues & workers
+ ◉ Cache service (memory/redis/upstash)
+ ◉ Better Auth integration
+ ◉ MCP server scaffold
+ ◉ Docker & docker-compose templates
+
+(Use arrow keys to move, space to toggle, enter to continue.)
+```
+
+This keeps all optional modules in one multi-select (exactly like the shadcn UI): arrow keys move, space toggles, enter confirms. Skip interactivity by passing flags (e.g. `--with-auth`) or `--yes`.
+
 ## `init` Flags
 
 - `--app <path>` → Location of the Next.js `app` directory (default `app`).

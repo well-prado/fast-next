@@ -1,9 +1,7 @@
-import { NextResponse } from "next/server";
 import type { Response as LightMyRequestResponse } from "light-my-request";
+import { NextResponse } from "next/server";
 
-function toHeadersInit(
-  source: LightMyRequestResponse["headers"]
-): Headers {
+function toHeadersInit(source: LightMyRequestResponse["headers"]): Headers {
   const headers = new Headers();
 
   for (const [key, value] of Object.entries(source)) {
@@ -44,9 +42,7 @@ function toBodyInit(response: LightMyRequestResponse): BodyInit | null {
   return value;
 }
 
-export function convertToNextResponse(
-  response: LightMyRequestResponse
-): NextResponse {
+export function convertToNextResponse(response: LightMyRequestResponse): NextResponse {
   const headers = toHeadersInit(response.headers);
   const body = toBodyInit(response);
   const init: ResponseInit = {

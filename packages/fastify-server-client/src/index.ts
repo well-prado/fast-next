@@ -1,23 +1,15 @@
-import type { RouteCallOptions } from "@fast-next/fastify-server-caller";
-import type { FastifyRouteDefinition, RouteFor } from "@fast-next/fastify-router";
-import {
-  FastifyQueryClient,
-  type OperationDescriptor,
-  type OperationInvoker,
-  type OperationResponse,
-  type ResourceClient,
-  type RouteReply,
-} from "@fast-next/fastify-query-client";
 import type {
-  OperationsForResource,
-  ResourceNames,
-} from "@fast-next/fastify-router";
+  OperationDescriptor,
+  OperationInvoker,
+  ResourceClient,
+  RouteReply,
+} from "@fast-next/fastify-query-client";
+import type { FastifyRouteDefinition } from "@fast-next/fastify-router";
+import type { RouteCallOptions } from "@fast-next/fastify-server-caller";
 
-export function createServerClient<
-  TRoutes extends readonly FastifyRouteDefinition[]
->(
+export function createServerClient<TRoutes extends readonly FastifyRouteDefinition[]>(
   routes: TRoutes,
-  caller: FastifyCaller<TRoutes>
+  caller: FastifyCaller<TRoutes>,
 ): ResourceClient<TRoutes> {
   const client: Record<string, Record<string, unknown>> = {};
 
@@ -25,7 +17,11 @@ export function createServerClient<
     const resource = route.config.meta.resource;
     const operation = route.config.meta.operation;
 
-    const resourceBucket = client[resource] ?? (client[resource] = {});
+    let resourceBucket = client[resource];
+    if (!resourceBucket) {
+      resourceBucket = {};
+      client[resource] = resourceBucket;
+    }
     resourceBucket[operation] = createOperationDescriptor(route, caller);
   }
 
@@ -36,17 +32,10 @@ export { FastifyQueryClient } from "@fast-next/fastify-query-client";
 
 function createOperationDescriptor<
   TRoutes extends readonly FastifyRouteDefinition[],
-  Route extends TRoutes[number]
->(
-  route: Route,
-  caller: FastifyCaller<TRoutes>
-): OperationDescriptor<Route> {
+  Route extends TRoutes[number],
+>(route: Route, caller: FastifyCaller<TRoutes>): OperationDescriptor<Route> {
   const invoke: OperationInvoker<Route> = async (options) => {
-    const response = await caller(
-      route.method,
-      route.path,
-      options
-    );
+    const response = await caller(route.method, route.path, options);
 
     return {
       statusCode: response.statusCode,
@@ -70,30 +59,28 @@ function createOperationDescriptor<
 
 // ---------- Types ----------
 
-type RouteUnion<TRoutes extends readonly FastifyRouteDefinition[]> =
-  TRoutes[number];
+type RouteUnion<TRoutes extends readonly FastifyRouteDefinition[]> = TRoutes[number];
 
-type MethodNames<TRoutes extends readonly FastifyRouteDefinition[]> =
-  RouteUnion<TRoutes>["method"];
+type MethodNames<TRoutes extends readonly FastifyRouteDefinition[]> = RouteUnion<TRoutes>["method"];
 
 type PathsForMethod<
   TRoutes extends readonly FastifyRouteDefinition[],
-  TMethod extends MethodNames<TRoutes>
+  TMethod extends MethodNames<TRoutes>,
 > = Extract<RouteUnion<TRoutes>, { method: TMethod }>["path"];
 
 type RouteMatch<
   TRoutes extends readonly FastifyRouteDefinition[],
   TMethod extends MethodNames<TRoutes>,
-  TPath extends PathsForMethod<TRoutes, TMethod>
+  TPath extends PathsForMethod<TRoutes, TMethod>,
 > = Extract<RouteUnion<TRoutes>, { method: TMethod; path: TPath }>;
 
 type FastifyCaller<TRoutes extends readonly FastifyRouteDefinition[]> = <
   TMethod extends MethodNames<TRoutes>,
-  TPath extends PathsForMethod<TRoutes, TMethod>
+  TPath extends PathsForMethod<TRoutes, TMethod>,
 >(
   method: TMethod,
   path: TPath,
-  options?: RouteCallOptions<RouteMatch<TRoutes, TMethod, TPath>>
+  options?: RouteCallOptions<RouteMatch<TRoutes, TMethod, TPath>>,
 ) => Promise<{
   statusCode: number;
   headers: Record<string, string>;
@@ -109,10 +96,10 @@ export type QueryOptions<Descriptor> = Descriptor extends {
     : never;
 
 export type QueryResult<Descriptor> = Descriptor extends {
-  query: (...args: any[]) => infer Result;
+  query: (...args: never[]) => infer Result;
 }
   ? Result
-  : Descriptor extends { request: (...args: any[]) => infer RequestResult }
+  : Descriptor extends { request: (...args: never[]) => infer RequestResult }
     ? RequestResult
     : never;
 
@@ -125,14 +112,14 @@ export type MutationOptions<Descriptor> = Descriptor extends {
     : never;
 
 export type MutationResult<Descriptor> = Descriptor extends {
-  mutate: (...args: any[]) => infer Result;
+  mutate: (...args: never[]) => infer Result;
 }
   ? Result
-  : Descriptor extends { request: (...args: any[]) => infer RequestResult }
+  : Descriptor extends { request: (...args: never[]) => infer RequestResult }
     ? RequestResult
     : never;
 
-export type QueryDescriptor<TApi extends ResourceClient<any>> = {
+export type QueryDescriptor<TApi extends ResourceClient<readonly FastifyRouteDefinition[]>> = {
   [R in keyof TApi]: {
     [O in keyof TApi[R]]: {
       resource: R;
@@ -148,4 +135,5 @@ export type {
   OperationInvoker,
   OperationResponse,
   ResourceClient,
+  RouteReply,
 } from "@fast-next/fastify-query-client";

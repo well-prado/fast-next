@@ -6,9 +6,7 @@ const MULTI_VALUE_HEADERS = new Set(["set-cookie"]);
  * Converts the immutable Fetch API Headers object that Next.js exposes
  * into the plain object structure expected by Fastify's inject helper.
  */
-export function convertNextHeaders(
-  headers: Headers
-): FastifyCompatibleHeaders {
+export function convertNextHeaders(headers: Headers): FastifyCompatibleHeaders {
   const result: FastifyCompatibleHeaders = {};
 
   headers.forEach((value, key) => {

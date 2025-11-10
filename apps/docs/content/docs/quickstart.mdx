@@ -7,7 +7,7 @@ description: Install dependencies, wire the Fastify adapter, and explore the gen
 
 ```bash
 pnpm install
-pnpm dlx create-fast-next init . \
+pnpm dlx create-fast-next@latest init . \
   --install auto \
   --with-auth \
   --with-queue \
@@ -17,7 +17,7 @@ pnpm dlx create-fast-next init . \
   --orm prisma --db postgres
 ```
 
-All flags are optional—omit them to answer prompts interactively. The CLI drops the API catch-all, Fastify server helpers, Better Auth bridge, optional queue/cache/MCP/Docker scaffolds, and (if selected) ORM boilerplate. After running with `--with-auth`, edit `src/server/services/auth/better-auth.ts` to configure adapters, secrets, and providers before hitting `/api/auth/*`.
+All flags are optional—omit them to answer prompts interactively. The CLI drops the API catch-all, Fastify server helpers, Better Auth bridge, optional queue/cache/MCP/Docker scaffolds, and (if selected) ORM boilerplate. After running with `--with-auth`, edit `src/server/services/auth/better-auth.ts` to configure adapters, secrets, and providers before hitting `/api/auth/*`. When you stay in interactive mode, the prompt mirrors the shadcn CLI: database → ORM → a multi-select of optional modules (↑/↓ + space, enter to confirm).
 
 ## 2. Run the Web App
 

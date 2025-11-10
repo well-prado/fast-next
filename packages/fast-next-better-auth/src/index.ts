@@ -1,12 +1,8 @@
-import { betterAuth } from "better-auth";
-import type { Auth, BetterAuthOptions, BetterAuthPlugin } from "better-auth";
-import { nextCookies, toNextJsHandler } from "better-auth/integrations/next-js";
-import type {
-  FastifyPluginAsync,
-  FastifyReply,
-  FastifyRequest,
-} from "fastify";
 import { Buffer } from "node:buffer";
+import type { Auth, BetterAuthOptions, BetterAuthPlugin } from "better-auth";
+import { betterAuth } from "better-auth";
+import { nextCookies, toNextJsHandler } from "better-auth/integrations/next-js";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
 export type { Auth, BetterAuthOptions, BetterAuthPlugin };
 
@@ -63,9 +59,7 @@ export function createFastNextAuth(options: FastNextAuthOptions): Auth {
   } as BetterAuthOptions);
 }
 
-export function createNextAuthHandler({
-  auth,
-}: CreateNextAuthHandlerParams): NextAuthHandlers {
+export function createNextAuthHandler({ auth }: CreateNextAuthHandlerParams): NextAuthHandlers {
   const handlers = toNextJsHandler(auth);
   const mutate = handlers.POST;
   return {
@@ -108,24 +102,16 @@ export function createFastifyBetterAuthPlugin({
           await sendResponse(reply, response);
         } catch (error) {
           if (logErrors) {
-            request.log?.error(
-              { err: error },
-              "[fast-next/better-auth] Failed to proxy request"
-            );
+            request.log?.error({ err: error }, "[fast-next/better-auth] Failed to proxy request");
           }
-          reply
-            .status(500)
-            .send({ error: "Better Auth handler failed. Check server logs." });
+          reply.status(500).send({ error: "Better Auth handler failed. Check server logs." });
         }
       });
     }
   };
 }
 
-function appendPluginOnce(
-  plugins: BetterAuthPlugin[],
-  candidate: BetterAuthPlugin
-) {
+function appendPluginOnce(plugins: BetterAuthPlugin[], candidate: BetterAuthPlugin) {
   if (plugins.some((plugin) => plugin.id === candidate.id)) {
     return plugins;
   }
@@ -159,7 +145,9 @@ function buildHeaders(request: FastifyRequest): Headers {
     }
 
     if (Array.isArray(value)) {
-      value.forEach((entry) => headers.append(key, entry));
+      value.forEach((entry) => {
+        headers.append(key, entry);
+      });
     } else {
       headers.set(key, String(value));
     }
@@ -221,7 +209,9 @@ function buildSearchParams(payload: Record<string, unknown>): URLSearchParams {
       continue;
     }
     if (Array.isArray(rawValue)) {
-      rawValue.forEach((entry) => params.append(key, String(entry)));
+      rawValue.forEach((entry) => {
+        params.append(key, String(entry));
+      });
       continue;
     }
     params.set(key, String(rawValue));
@@ -248,7 +238,9 @@ async function sendResponse(reply: FastifyReply, response: Response) {
 
 function applyResponseHeaders(reply: FastifyReply, response: Response) {
   const setCookies = getSetCookieHeaders(response.headers);
-  setCookies.forEach((cookie) => reply.header("set-cookie", cookie));
+  setCookies.forEach((cookie) => {
+    reply.header("set-cookie", cookie);
+  });
 
   response.headers.forEach((value, key) => {
     if (key.toLowerCase() === "set-cookie" && setCookies.length) {
@@ -259,9 +251,11 @@ function applyResponseHeaders(reply: FastifyReply, response: Response) {
 }
 
 function getSetCookieHeaders(headers: Headers): string[] {
-  const maybe = (headers as Headers & {
-    getSetCookie?: () => string[];
-  }).getSetCookie;
+  const maybe = (
+    headers as Headers & {
+      getSetCookie?: () => string[];
+    }
+  ).getSetCookie;
 
   if (typeof maybe === "function") {
     return maybe.call(headers);
