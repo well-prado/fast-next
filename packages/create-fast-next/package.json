@@ -9,6 +9,7 @@
   "dependencies": {
     "bullmq": "^5.63.0",
     "ioredis": "^5.8.2",
+    "enquirer": "^2.4.1",
     "@modelcontextprotocol/sdk": "^1.21.1",
     "@mrleebo/prisma-ast": "^0.13.1"
   },

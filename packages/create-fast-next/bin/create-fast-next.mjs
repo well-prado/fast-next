@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
 import fsSync from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import readline from "node:readline/promises";
-import { spawn } from "node:child_process";
+import enquirer from "enquirer";
+
+const { prompt } = enquirer;
 
 const HELP = `create-fast-next
 
@@ -54,11 +56,6 @@ const CACHE_DEPENDENCIES = {
 };
 const AUTH_DEPENDENCIES = ["@fast-next/better-auth"];
 const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
-const ORM_DEPENDENCIES = {
-  prisma: ["prisma", "@prisma/client"],
-  drizzle: ["drizzle-orm", "drizzle-kit"],
-};
-
 const INSTALL_COMMANDS = {
   pnpm: {
     bin: "pnpm",
@@ -135,41 +132,26 @@ function parseArgs(args) {
 }
 
 async function runInit(options) {
-  const prompter = createPrompter(process.stdin.isTTY && !options.yes);
-  const projectDirInput = options._[0] ?? (await prompter.ask("Project directory", "."));
+  const interactive = process.stdin.isTTY && !options.yes;
+  const projectDirInput =
+    options._[0] ?? (await promptInput("Project directory", ".", interactive));
   const projectRoot = path.resolve(process.cwd(), projectDirInput);
-  const appDir = options.app ?? (await prompter.ask("Next.js app directory", "app"));
-  const serverDir = options.server ?? (await prompter.ask("Server directory", path.join("src", "server")));
-  const apiDir = options.api ?? (await prompter.ask("API catch-all path", path.join(appDir, "api", "[...fastify]")));
+  const appDir = options.app ?? (await promptInput("Next.js app directory", "app", interactive));
+  const serverDir =
+    options.server ??
+    (await promptInput("Server directory", path.join("src", "server"), interactive));
+  const apiDir =
+    options.api ??
+    (await promptInput(
+      "API catch-all path",
+      path.join(appDir, "api", "[...fastify]"),
+      interactive,
+    ));
   const force = Boolean(options.force);
-  const ormChoice = await resolveOrmOption(options.orm, options.db, prompter);
-  const queueEnabled = await resolveBooleanOption(
-    options["with-queue"],
-    prompter,
-    "Add BullMQ queue scaffolding?",
-    false
-  );
-  const cacheOption = await resolveCacheOption(options["with-cache"], prompter);
-  const authEnabled = await resolveBooleanOption(
-    options["with-auth"],
-    prompter,
-    "Add Better Auth scaffolding?",
-    false
-  );
-  const mcpEnabled = await resolveBooleanOption(
-    options["with-mcp"],
-    prompter,
-    "Add MCP server scaffolding?",
-    false
-  );
-  const dockerEnabled = await resolveBooleanOption(
-    options["with-docker"],
-    prompter,
-    "Add docker-compose template?",
-    false
-  );
-  const installChoice = await resolveInstallChoice(options.install, prompter, projectRoot);
-  prompter.close();
+  const ormChoice = await resolveOrmOption(options.orm, options.db, interactive);
+  const featureToggles = await resolveFeatureSelections(options, interactive);
+  const { queueEnabled, cacheOption, authEnabled, mcpEnabled, dockerEnabled } = featureToggles;
+  const installChoice = await resolveInstallChoice(options.install, projectRoot, interactive);
 
   const appDirAbs = path.join(projectRoot, appDir);
   const routeFile = path.join(projectRoot, apiDir, "route.ts");
@@ -187,12 +169,12 @@ async function runInit(options) {
   await ensureDir(featuresDir);
 
   const relativeImportToFastifyApp = toImportPath(
-    path.relative(path.dirname(routeFile), fastifyAppFile)
+    path.relative(path.dirname(routeFile), fastifyAppFile),
   );
 
   await writeFile(routeFile, getRouteHandlerTemplate(relativeImportToFastifyApp), force);
   const fastifyAuthImportPath = toImportPath(
-    path.relative(path.dirname(fastifyAppFile), authServiceFile)
+    path.relative(path.dirname(fastifyAppFile), authServiceFile),
   );
   await writeFile(
     fastifyAppFile,
@@ -200,7 +182,7 @@ async function runInit(options) {
       includeAuth: authEnabled,
       authImportPath: fastifyAuthImportPath,
     }),
-    force
+    force,
   );
   await writeFile(routesFile, getRoutesIndexTemplate(), force);
   await writeFile(apiHelperFile, getServerApiTemplate(), force);
@@ -211,26 +193,37 @@ async function runInit(options) {
 
   if (ormChoice.orm !== "none") {
     await scaffoldOrm({ projectRoot, serverDirAbs, force, choice: ormChoice });
-    ormChoice.dependencies.forEach((dep) => dependencySet.add(dep));
+    ormChoice.dependencies.forEach((dep) => {
+      dependencySet.add(dep);
+    });
     postInitNotes.push(...ormChoice.notes);
   }
 
   if (queueEnabled) {
-    await scaffoldQueueTemplate({ projectRoot, serverDirAbs, force });
-    QUEUE_DEPENDENCIES.forEach((dep) => dependencySet.add(dep));
+    await scaffoldQueueTemplate({ serverDirAbs, force });
+    QUEUE_DEPENDENCIES.forEach((dep) => {
+      dependencySet.add(dep);
+    });
     const workersEntry = path.relative(projectRoot, path.join(serverDirAbs, "workers", "index.ts"));
     postInitNotes.push(
       "Configure REDIS_HOST/REDIS_PORT/REDIS_PASSWORD in your environment before running queues.",
-      `Start workers with ts-node/tsx (e.g., 'pnpm exec tsx ${workersEntry}') in a separate process.`
+      `Start workers with ts-node/tsx (e.g., 'pnpm exec tsx ${workersEntry}') in a separate process.`,
     );
   }
 
   if (cacheOption.enabled) {
-    await scaffoldCacheTemplate({ projectRoot, serverDirAbs, force, provider: cacheOption.provider });
+    await scaffoldCacheTemplate({
+      projectRoot,
+      serverDirAbs,
+      force,
+      provider: cacheOption.provider,
+    });
     const deps = CACHE_DEPENDENCIES[cacheOption.provider] ?? [];
-    deps.forEach((dep) => dependencySet.add(dep));
+    deps.forEach((dep) => {
+      dependencySet.add(dep);
+    });
     postInitNotes.push(
-      `Cache provider '${cacheOption.provider}' scaffolded. Configure env vars (see src/server/services/cache/cache.service.ts).`
+      `Cache provider '${cacheOption.provider}' scaffolded. Configure env vars (see src/server/services/cache/cache.service.ts).`,
     );
   }
 
@@ -240,21 +233,29 @@ async function runInit(options) {
       authServiceFile,
       force,
     });
-    AUTH_DEPENDENCIES.forEach((dep) => dependencySet.add(dep));
+    AUTH_DEPENDENCIES.forEach((dep) => {
+      dependencySet.add(dep);
+    });
     postInitNotes.push(
-      "Better Auth scaffolding created. Update services/auth/better-auth.ts with your adapter, secrets, and providers before enabling the routes."
+      "Better Auth scaffolding created. Update services/auth/better-auth.ts with your adapter, secrets, and providers before enabling the routes.",
     );
   }
 
   if (mcpEnabled) {
-    await scaffoldMcpTemplate({ projectRoot, serverDirAbs, force });
-    MCP_DEPENDENCIES.forEach((dep) => dependencySet.add(dep));
-    postInitNotes.push("MCP server files created under services/mcp. Start it with 'pnpm exec tsx src/server/services/mcp/server.ts'.");
+    await scaffoldMcpTemplate({ serverDirAbs, force });
+    MCP_DEPENDENCIES.forEach((dep) => {
+      dependencySet.add(dep);
+    });
+    postInitNotes.push(
+      "MCP server files created under services/mcp. Start it with 'pnpm exec tsx src/server/services/mcp/server.ts'.",
+    );
   }
 
   if (dockerEnabled) {
     await scaffoldDockerTemplate({ projectRoot, force });
-    postInitNotes.push("docker-compose.yml generated. Update .env before running 'docker compose up'.");
+    postInitNotes.push(
+      "docker-compose.yml generated. Update .env before running 'docker compose up'.",
+    );
   }
 
   if (installChoice && installChoice !== "skip") {
@@ -262,16 +263,20 @@ async function runInit(options) {
     await installDependencies(installChoice, projectRoot, Array.from(dependencySet));
   } else {
     console.log("\nDependencies to install:");
-    console.log("  " + Array.from(dependencySet).join(" "));
+    console.log(`  ${Array.from(dependencySet).join(" ")}`);
     console.log("Use your preferred package manager (e.g. 'pnpm add ...').");
   }
 
   console.log("\nNext steps:\n");
-  console.log("1. Ensure your tsconfig.json maps '@/*' to your source directory if you plan to use alias imports.");
+  console.log(
+    "1. Ensure your tsconfig.json maps '@/*' to your source directory if you plan to use alias imports.",
+  );
   console.log("2. Start Next.js with 'pnpm dev' and hit /api/health to verify the bridge.");
   if (postInitNotes.length) {
     console.log("\nAdditional notes:");
-    postInitNotes.forEach((note) => console.log(`- ${note}`));
+    postInitNotes.forEach((note) => {
+      console.log(`- ${note}`);
+    });
   }
 }
 
@@ -319,7 +324,12 @@ async function runQueueCommand(options) {
     if (!options._[1]) {
       throw new Error("Queue name required: create-fast-next queue generate <name>");
     }
-    await scaffoldCustomQueue({ projectRoot, name: options._[1], serverDir, force: Boolean(options.force) });
+    await scaffoldCustomQueue({
+      projectRoot,
+      name: options._[1],
+      serverDir,
+      force: Boolean(options.force),
+    });
   } else {
     throw new Error(`Unknown queue action '${action}'. Use 'start', 'status', or 'generate'.`);
   }
@@ -364,7 +374,10 @@ async function runMcpCommand(options) {
   const entry = options.entry ?? path.join("src", "server", "services", "mcp", "server.ts");
   const entryAbs = path.join(projectRoot, entry);
   const packageManager = detectPackageManager(projectRoot) ?? "pnpm";
-  const toolsDir = path.join(projectRoot, options.tools ?? path.join("src", "server", "features", "mcp", "tools"));
+  const toolsDir = path.join(
+    projectRoot,
+    options.tools ?? path.join("src", "server", "features", "mcp", "tools"),
+  );
   const indexPath = path.join(toolsDir, "index.ts");
 
   if (action === "start") {
@@ -694,8 +707,10 @@ function camelCase(value) {
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 }
 
-async function resolveOrmOption(ormFlag, dbFlag, prompter) {
-  const ormValue = ormFlag ?? (prompter.enabled ? await prompter.ask("Select ORM (none/prisma/drizzle)", "none") : "none");
+async function resolveOrmOption(ormFlag, dbFlag, interactive) {
+  const ormValue =
+    ormFlag ??
+    (await promptSelect("Select ORM", ["none", "prisma", "drizzle"], "none", interactive));
   const orm = ormValue.toLowerCase();
   if (!["none", "prisma", "drizzle"].includes(orm)) {
     throw new Error(`Unsupported orm '${orm}'. Choose none, prisma, or drizzle.`);
@@ -704,7 +719,14 @@ async function resolveOrmOption(ormFlag, dbFlag, prompter) {
     return { orm: "none", db: "sqlite", dependencies: [], notes: [] };
   }
 
-  const dbValue = dbFlag ?? (prompter.enabled ? await prompter.ask("Select database (sqlite/postgres/mysql)", "sqlite") : "sqlite");
+  const dbValue =
+    dbFlag ??
+    (await promptSelect(
+      "Select database (sqlite/postgres/mysql)",
+      ["sqlite", "postgres", "mysql"],
+      "sqlite",
+      interactive,
+    ));
   const db = dbValue.toLowerCase();
   if (!["sqlite", "postgres", "mysql"].includes(db)) {
     throw new Error(`Unsupported database '${db}'. Choose sqlite, postgres, or mysql.`);
@@ -731,114 +753,169 @@ async function resolveOrmOption(ormFlag, dbFlag, prompter) {
   return { orm, db, dependencies: Array.from(dependencies), notes };
 }
 
-function createPrompter(enabled) {
-  if (!enabled) {
-    return {
-      enabled: false,
-      async ask(_question, defaultValue) {
-        return defaultValue;
-      },
-      close() {},
-    };
+async function promptInput(message, initial, interactive) {
+  if (!interactive) {
+    return initial;
   }
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
+  const response = await prompt({
+    type: "input",
+    name: "value",
+    message,
+    initial,
   });
-
-  return {
-    enabled: true,
-    async ask(question, defaultValue) {
-      const suffix = defaultValue ? ` (${defaultValue})` : "";
-      const answer = await rl.question(`${question}${suffix}: `);
-      const trimmed = answer.trim();
-      return trimmed || defaultValue;
-    },
-    close() {
-      rl.close();
-    },
-  };
+  const value = typeof response.value === "string" ? response.value.trim() : "";
+  return value || initial;
 }
 
-async function resolveInstallChoice(value, prompter, projectRoot) {
-  if (value) {
-    if (value === true) return "skip";
-    const normalizedValue = typeof value === "string" ? value.toLowerCase() : value;
-    if (normalizedValue === "auto") {
-      return detectPackageManager(projectRoot) ?? "skip";
-    }
-    if (["pnpm", "npm", "yarn", "bun", "skip"].includes(normalizedValue)) {
-      return normalizedValue;
-    }
-    return "skip";
+async function promptSelect(message, choices, initial, interactive) {
+  if (!interactive) {
+    return initial;
   }
-
-  if (!prompter.enabled) {
-    return "skip";
-  }
-
-  const answer = await prompter.ask(
-    "Install dependencies now? (pnpm/npm/yarn/bun/skip)",
-    detectPackageManager(projectRoot) ?? "skip"
-  );
-  const normalized = answer.trim().toLowerCase();
-  if (["pnpm", "npm", "yarn", "bun"].includes(normalized)) {
-    return normalized;
-  }
-  return "skip";
+  const initialIndex = Math.max(0, choices.indexOf(initial ?? choices[0]));
+  const response = await prompt({
+    type: "select",
+    name: "value",
+    message,
+    choices,
+    initial: initialIndex,
+  });
+  return response.value;
 }
 
-async function resolveBooleanOption(value, prompter, question, defaultValue) {
-  if (typeof value === "string") {
-    return value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+async function resolveFeatureSelections(options, interactive) {
+  const queueFlag = coerceBooleanFlag(options["with-queue"]);
+  const authFlag = coerceBooleanFlag(options["with-auth"]);
+  const mcpFlag = coerceBooleanFlag(options["with-mcp"]);
+  const dockerFlag = coerceBooleanFlag(options["with-docker"]);
+  const cacheFlag = coerceCacheOption(options["with-cache"]);
+
+  const multiSelectChoices = [];
+  if (queueFlag === undefined) {
+    multiSelectChoices.push({ name: "queue", message: "BullMQ queues & workers" });
   }
+  if (cacheFlag === undefined) {
+    multiSelectChoices.push({ name: "cache", message: "Cache service (memory/redis/upstash)" });
+  }
+  if (authFlag === undefined) {
+    multiSelectChoices.push({ name: "auth", message: "Better Auth integration" });
+  }
+  if (mcpFlag === undefined) {
+    multiSelectChoices.push({ name: "mcp", message: "MCP server scaffold" });
+  }
+  if (dockerFlag === undefined) {
+    multiSelectChoices.push({ name: "docker", message: "Docker & docker-compose templates" });
+  }
+
+  let selected = new Set();
+  if (interactive && multiSelectChoices.length) {
+    const response = await prompt({
+      type: "multiselect",
+      name: "features",
+      message: "Select optional modules (space to toggle)",
+      hint: "Use ↑/↓ to move, space to toggle, enter to confirm.",
+      choices: multiSelectChoices.map((choice) => ({
+        name: choice.name,
+        message: choice.message,
+        value: choice.name,
+      })),
+    });
+    selected = new Set(response.features ?? []);
+  }
+
+  const queueEnabled = queueFlag ?? selected.has("queue");
+  const authEnabled = authFlag ?? selected.has("auth");
+  const mcpEnabled = mcpFlag ?? selected.has("mcp");
+  const dockerEnabled = dockerFlag ?? selected.has("docker");
+
+  let cacheOption;
+  if (cacheFlag !== undefined) {
+    cacheOption = cacheFlag;
+  } else if (selected.has("cache")) {
+    const provider = await promptSelect(
+      "Select cache provider",
+      ["memory", "redis", "upstash"],
+      "memory",
+      interactive,
+    );
+    cacheOption = { enabled: true, provider };
+  } else {
+    cacheOption = { enabled: false, provider: "memory" };
+  }
+
+  return { queueEnabled, authEnabled, mcpEnabled, dockerEnabled, cacheOption };
+}
+
+function coerceBooleanFlag(value) {
   if (typeof value === "boolean") {
     return value;
   }
-
-  if (!prompter.enabled) {
-    return defaultValue;
-  }
-
-  const defaultLabel = defaultValue ? "Y/n" : "y/N";
-  const answer = await prompter.ask(`${question} ${defaultLabel}`, defaultValue ? "y" : "n");
-  return /^y(es)?$/i.test(answer.trim());
-}
-
-async function resolveCacheOption(value, prompter) {
-  const valid = ["memory", "redis", "upstash", "none", "false"];
   if (typeof value === "string") {
     const normalized = value.toLowerCase();
-    if (normalized === "false" || normalized === "none") {
-      return { enabled: false, provider: "memory" };
+    if (["true", "yes", "y", "1"].includes(normalized)) {
+      return true;
     }
-    if (valid.includes(normalized)) {
-      if (normalized === "none") {
-        return { enabled: false, provider: "memory" };
-      }
-      return { enabled: true, provider: normalized };
+    if (["false", "no", "n", "0"].includes(normalized)) {
+      return false;
     }
-  } else if (typeof value === "boolean") {
+  }
+  return undefined;
+}
+
+function coerceCacheOption(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "boolean") {
     return { enabled: value, provider: "memory" };
   }
-
-  if (!prompter.enabled) {
+  const normalized = value.toLowerCase();
+  if (["none", "false", "no", "n", "0"].includes(normalized)) {
     return { enabled: false, provider: "memory" };
   }
-
-  const answer = await prompter.ask(
-    "Add cache service? (memory/redis/upstash/none)",
-    "none"
-  );
-  const normalized = answer.trim().toLowerCase();
-  if (normalized === "none" || normalized === "no" || normalized === "n") {
-    return { enabled: false, provider: "memory" };
-  }
-  if (normalized === "redis" || normalized === "upstash" || normalized === "memory") {
+  if (["memory", "redis", "upstash"].includes(normalized)) {
     return { enabled: true, provider: normalized };
   }
-  return { enabled: false, provider: "memory" };
+  if (["true", "yes", "y", "1"].includes(normalized)) {
+    return { enabled: true, provider: "memory" };
+  }
+  return undefined;
+}
+
+async function resolveInstallChoice(value, projectRoot, interactive) {
+  const normalized = normalizeInstallChoiceValue(value);
+  if (normalized && normalized !== "auto") {
+    return normalized;
+  }
+  if (normalized === "auto") {
+    return detectPackageManager(projectRoot) ?? "skip";
+  }
+  if (!interactive) {
+    return "skip";
+  }
+  const defaultChoice = detectPackageManager(projectRoot) ?? "skip";
+  return promptSelect(
+    "Install dependencies now?",
+    ["pnpm", "npm", "yarn", "bun", "skip"],
+    defaultChoice,
+    interactive,
+  );
+}
+
+function normalizeInstallChoiceValue(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === true) {
+    return "skip";
+  }
+  const normalized = String(value).toLowerCase();
+  if (["pnpm", "npm", "yarn", "bun", "skip"].includes(normalized)) {
+    return normalized;
+  }
+  if (normalized === "auto") {
+    return "auto";
+  }
+  return "skip";
 }
 
 function detectPackageManager(projectRoot) {
@@ -869,7 +946,7 @@ async function ensurePackageJsonDeps(projectRoot, deps) {
   const packageJsonPath = path.join(projectRoot, "package.json");
   if (!(await fileExists(packageJsonPath))) {
     console.warn(
-      `[warn] package.json not found at ${packageJsonPath}. Skipping dependency injection.`
+      `[warn] package.json not found at ${packageJsonPath}. Skipping dependency injection.`,
     );
     return;
   }
@@ -920,7 +997,7 @@ async function installDependencies(manager, cwd, deps) {
   await spawnInteractive(config.bin, config.buildArgs(deps), cwd);
 }
 
-async function scaffoldQueueTemplate({ projectRoot, serverDirAbs, force }) {
+async function scaffoldQueueTemplate({ serverDirAbs, force }) {
   const servicesDir = path.join(serverDirAbs, "services");
   const queuesDir = path.join(serverDirAbs, "queues");
   const workersDir = path.join(serverDirAbs, "workers");
@@ -929,29 +1006,13 @@ async function scaffoldQueueTemplate({ projectRoot, serverDirAbs, force }) {
   await ensureDir(queuesDir);
   await ensureDir(workersDir);
 
-  await writeFile(
-    path.join(servicesDir, "queue.service.ts"),
-    getQueueServiceTemplate(),
-    force
-  );
+  await writeFile(path.join(servicesDir, "queue.service.ts"), getQueueServiceTemplate(), force);
 
-  await writeFile(
-    path.join(queuesDir, "email.queue.ts"),
-    getQueueExampleTemplate(),
-    force
-  );
+  await writeFile(path.join(queuesDir, "email.queue.ts"), getQueueExampleTemplate(), force);
 
-  await writeFile(
-    path.join(workersDir, "email.worker.ts"),
-    getQueueWorkerTemplate(),
-    force
-  );
+  await writeFile(path.join(workersDir, "email.worker.ts"), getQueueWorkerTemplate(), force);
 
-  await writeFile(
-    path.join(workersDir, "index.ts"),
-    getQueueWorkerIndexTemplate(),
-    force
-  );
+  await writeFile(path.join(workersDir, "index.ts"), getQueueWorkerIndexTemplate(), force);
 
   console.log("[queue] BullMQ scaffolding created");
 }
@@ -967,9 +1028,7 @@ async function scaffoldCacheTemplate({ serverDirAbs, force, provider }) {
 async function scaffoldAuthTemplate({ authRouteFile, authServiceFile, force }) {
   await ensureDir(path.dirname(authServiceFile));
   await writeFile(authServiceFile, getBetterAuthServiceTemplate(), force);
-  const authImportPath = toImportPath(
-    path.relative(path.dirname(authRouteFile), authServiceFile)
-  );
+  const authImportPath = toImportPath(path.relative(path.dirname(authRouteFile), authServiceFile));
   await ensureDir(path.dirname(authRouteFile));
   await writeFile(authRouteFile, getBetterAuthRouteTemplate(authImportPath), force);
   console.log("[auth] Better Auth bridge created");
@@ -995,28 +1054,26 @@ async function scaffoldOrm({ projectRoot, serverDirAbs, force, choice }) {
     await writeFile(
       path.join(serverDirAbs, "services", "database.ts"),
       getPrismaServiceTemplate(),
-      force
+      force,
     );
   } else if (choice.orm === "drizzle") {
     await scaffoldDrizzle(projectRoot, serverDirAbs, choice.db, force);
   }
 
-  await writeFile(
-    path.join(serverDirAbs, "context.ts"),
-    getContextTemplate(choice.orm),
-    force
-  );
+  await writeFile(path.join(serverDirAbs, "context.ts"), getContextTemplate(choice.orm), force);
 }
 
 async function printQueueStats({ redisUrl, projectRoot, serverDir }) {
   try {
     const { Queue } = await import("bullmq");
     const IORedis = (await import("ioredis")).default;
-    const connection = redisUrl ? new IORedis(redisUrl) : new IORedis({
-      host: process.env.REDIS_HOST ?? "127.0.0.1",
-      port: Number(process.env.REDIS_PORT ?? 6379),
-      password: process.env.REDIS_PASSWORD || undefined,
-    });
+    const connection = redisUrl
+      ? new IORedis(redisUrl)
+      : new IORedis({
+          host: process.env.REDIS_HOST ?? "127.0.0.1",
+          port: Number(process.env.REDIS_PORT ?? 6379),
+          password: process.env.REDIS_PASSWORD || undefined,
+        });
 
     const queuesDir = path.join(projectRoot, serverDir, "queues");
     const queueNames = await listQueuesFromDir(queuesDir);
@@ -1033,7 +1090,7 @@ async function printQueueStats({ redisUrl, projectRoot, serverDir }) {
         "active",
         "completed",
         "failed",
-        "delayed"
+        "delayed",
       );
       console.log(`${name}:`);
       Object.entries(counts).forEach(([key, value]) => {
@@ -1045,7 +1102,10 @@ async function printQueueStats({ redisUrl, projectRoot, serverDir }) {
 
     await connection.quit();
   } catch (error) {
-    console.error("Failed to fetch queue status. Ensure bullmq/ioredis are installed.", error.message ?? error);
+    console.error(
+      "Failed to fetch queue status. Ensure bullmq/ioredis are installed.",
+      error.message ?? error,
+    );
   }
 }
 
@@ -1071,13 +1131,13 @@ async function createRedisClient(url) {
       port: Number(process.env.REDIS_PORT ?? 6379),
       password: process.env.REDIS_PASSWORD || undefined,
     });
-  } catch (error) {
+  } catch (_error) {
     console.error("ioredis is required for this command. Install it in the current project.");
     return null;
   }
 }
 
-async function scaffoldMcpTemplate({ projectRoot, serverDirAbs, force }) {
+async function scaffoldMcpTemplate({ serverDirAbs, force }) {
   const mcpServiceDir = path.join(serverDirAbs, "services", "mcp");
   const mcpFeatureDir = path.join(serverDirAbs, "features", "mcp");
   const toolsDir = path.join(mcpFeatureDir, "tools");
@@ -1085,30 +1145,14 @@ async function scaffoldMcpTemplate({ projectRoot, serverDirAbs, force }) {
   await ensureDir(mcpFeatureDir);
   await ensureDir(toolsDir);
 
-  await writeFile(
-    path.join(mcpServiceDir, "mcp.service.ts"),
-    getMcpServiceTemplate(),
-    force
-  );
+  await writeFile(path.join(mcpServiceDir, "mcp.service.ts"), getMcpServiceTemplate(), force);
 
-  await writeFile(
-    path.join(mcpServiceDir, "server.ts"),
-    getMcpServerEntryTemplate(),
-    force
-  );
+  await writeFile(path.join(mcpServiceDir, "server.ts"), getMcpServerEntryTemplate(), force);
 
-  await writeFile(
-    path.join(toolsDir, "ping.tool.ts"),
-    getMcpToolTemplate("ping"),
-    force
-  );
+  await writeFile(path.join(toolsDir, "ping.tool.ts"), getMcpToolTemplate("ping"), force);
 
   const toolsIndexFile = path.join(toolsDir, "index.ts");
-  await writeFile(
-    toolsIndexFile,
-    getMcpToolsIndexTemplate(),
-    force
-  );
+  await writeFile(toolsIndexFile, getMcpToolsIndexTemplate(), force);
   await linkMcpTool(toolsIndexFile, "ping");
 
   const routesFile = path.join(mcpFeatureDir, "routes.ts");
@@ -1121,29 +1165,13 @@ async function scaffoldMcpTemplate({ projectRoot, serverDirAbs, force }) {
 }
 
 async function scaffoldDockerTemplate({ projectRoot, force }) {
-  await writeFile(
-    path.join(projectRoot, "docker-compose.yml"),
-    getDockerComposeTemplate(),
-    force
-  );
+  await writeFile(path.join(projectRoot, "docker-compose.yml"), getDockerComposeTemplate(), force);
 
-  await writeFile(
-    path.join(projectRoot, "Dockerfile"),
-    getDockerfileTemplate(),
-    force
-  );
+  await writeFile(path.join(projectRoot, "Dockerfile"), getDockerfileTemplate(), force);
 
-  await writeFile(
-    path.join(projectRoot, "Dockerfile.mcp"),
-    getDockerfileMcpTemplate(),
-    force
-  );
+  await writeFile(path.join(projectRoot, "Dockerfile.mcp"), getDockerfileMcpTemplate(), force);
 
-  await writeFile(
-    path.join(projectRoot, ".dockerignore"),
-    getDockerIgnoreTemplate(),
-    false
-  );
+  await writeFile(path.join(projectRoot, ".dockerignore"), getDockerIgnoreTemplate(), false);
 
   const envExamplePath = path.join(projectRoot, ".env.example");
   if (!(await fileExists(envExamplePath))) {
@@ -1559,7 +1587,10 @@ void mcpServer.start().catch((error) => {
 }
 
 function getMcpToolTemplate(name = "ping") {
-  const description = name === "ping" ? "Return a pong response to test connectivity" : `Tool '${name}' generated via CLI`;
+  const description =
+    name === "ping"
+      ? "Return a pong response to test connectivity"
+      : `Tool '${name}' generated via CLI`;
   return `import { mcpServer } from "../../services/mcp/mcp.service";
 
 mcpServer.registerTool({
@@ -1705,7 +1736,8 @@ function getDockerIgnoreTemplate() {
 dist
 *.log
 .env
-`;}
+`;
+}
 
 function getEnvExampleTemplate() {
   return `# App
@@ -1795,18 +1827,20 @@ async function listMcpTools(indexPath) {
     return;
   }
   const content = await fs.readFile(indexPath, "utf8");
-  const matches = [...content.matchAll(/import \"\.\/(.+?)\.tool\";/g)].map((match) => match[1]);
+  const matches = [...content.matchAll(/import "\.\/(.+?)\.tool";/g)].map((match) => match[1]);
   if (!matches.length) {
     console.log("No MCP tools registered yet.");
     return;
   }
   console.log("Registered MCP tools:\n");
-  matches.forEach((tool) => console.log(`- ${tool}`));
+  matches.forEach((tool) => {
+    console.log(`- ${tool}`);
+  });
 }
 
 function getPrismaSchemaTemplate(db) {
   const provider = db === "mysql" ? "mysql" : db === "postgres" ? "postgresql" : "sqlite";
-  const urlComment = provider === "sqlite" ? "file:./dev.db" : "env(\"DATABASE_URL\")";
+  const urlComment = provider === "sqlite" ? "file:./dev.db" : 'env("DATABASE_URL")';
   return `generator client {
   provider = "prisma-client-js"
 }
@@ -1859,12 +1893,6 @@ function getDrizzleClientTemplate(db) {
       : db === "postgres"
         ? 'import { Pool } from "pg";\nimport { drizzle } from "drizzle-orm/node-postgres";'
         : 'import mysql from "mysql2/promise";\nimport { drizzle } from "drizzle-orm/mysql2";';
-  const clientSetup =
-    db === "sqlite"
-      ? "const sqlite = new Database('sqlite.db');\nexport const database = drizzle(sqlite);"
-      : db === "postgres"
-        ? "const pool = new Pool({ connectionString: process.env.DATABASE_URL });\nexport const database = drizzle(pool);"
-        : "const pool = await mysql.createPool({ uri: process.env.DATABASE_URL });\nexport const database = drizzle(pool);";
   return `${importLine}
 
 export async function getDatabase() {
@@ -1874,7 +1902,6 @@ export async function getDatabase() {
 }
 
 function getDrizzleConfigTemplate(db) {
-  const driver = db === "sqlite" ? "better-sqlite" : db === "postgres" ? "pg" : "mysql2";
   const out = db === "sqlite" ? "./drizzle" : "./drizzle";
   return `import { defineConfig } from "drizzle-kit";
 
