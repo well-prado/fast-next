@@ -1,0 +1,106 @@
+---
+title: CLI Local Testing
+description: Run `create-fast-next` from this repo, bootstrap a new Next.js app, and explore every command before publishing.
+---
+
+## Command Surface
+
+| Command | Synopsis | Notes |
+| --- | --- | --- |
+| `init` | `create-fast-next init [projectDir] [flags]` | Scaffolds the Fastify bridge, optional modules (auth, queue, cache, MCP, Docker, ORM). |
+| `feature` | `create-fast-next feature <name> [--server src/server]` | Generates `schemas.ts`, `service.ts`, `routes.ts`, test stub, and links routes via FAST_NEXT markers. |
+| `queue` | `create-fast-next queue <start\|status\|generate>` | `start` boots workers, `status` prints BullMQ counts, `generate` creates `<name>.queue.ts` + worker. |
+| `cache` | `create-fast-next cache <stats\|clear>` | Quick Redis stats and key deletion helpers. |
+| `mcp` | `create-fast-next mcp <start\|status\|tool>` | Manages the Model Context Protocol server scaffolding and tools. |
+
+### Key `init` Flags
+
+- `--app`, `--server`, `--api` – customise paths (`app`, `src/server`, `app/api/[...fastify]` by default).
+- `--with-auth` – Better Auth bridge (Next handler, Fastify plugin, service stub).
+- `--with-queue` – BullMQ service + sample queue/worker.
+- `--with-cache <memory|redis|upstash>` – Cache service + provider wiring.
+- `--with-mcp` – MCP server, entry point, sample tool + routes.
+- `--with-docker` – Dockerfile(s), docker-compose, `.env.example`, npm scripts.
+- `--orm <none|prisma|drizzle>` + `--db <sqlite|postgres|mysql>` – Database scaffolding and context wiring.
+- `--install <pnpm|npm|yarn|bun|auto|skip>` – Controls dependency installation.
+- `--force`, `--yes` – Overwrite existing files and skip prompts (handy for automation/AI workflows).
+
+## Bootstrap a Fresh Next.js App (Before Publish)
+
+Until the package is published, the CLI lives only in this monorepo. Use the `pack` output as a local tarball:
+
+1. **Pack the CLI once:** (either run `pnpm pack` inside the package directory _or_ use `pnpm exec` from the repo root)
+
+   ```bash
+   # option A: cd into the package and pack
+   cd packages/create-fast-next
+   pnpm pack --pack-destination ../../tmp
+   cd ../../
+
+   # option B: stay at repo root and execute pack in that workspace
+   pnpm --filter create-fast-next exec pnpm pack --pack-destination ../../tmp
+   ```
+
+   Both commands emit a tarball such as `tmp/create-fast-next-0.0.0.tgz`. Update the paths if you prefer a different destination.
+
+2. **Create a blank Next.js project somewhere else:**
+
+   ```bash
+   pnpm dlx create-next-app@latest fast-next-playground --ts --app --src-dir --eslint false
+   cd fast-next-playground
+   ```
+
+3. **Run the CLI from the tarball:**
+
+   ```bash
+   pnpm dlx ../fast-next/tmp/create-fast-next-0.0.0.tgz init . \
+     --with-auth \
+     --with-queue \
+     --with-cache redis \
+     --with-mcp \
+     --with-docker \
+     --orm prisma --db postgres \
+     --install pnpm
+   ```
+
+   Adjust the relative path to the tarball if your clone lives elsewhere. All the usual flags work; the command above mirrors what we expect users to run after publish.
+
+4. **Verify the scaffold:**
+
+   ```bash
+   pnpm dev            # Next + Fastify bridge
+   pnpm lint           # Biome
+   pnpm check-types    # next typegen && tsc --noEmit (web app)
+   pnpm queue start    # (if BullMQ scaffolded; run via package.json scripts you create)
+   ```
+
+## Testing Commands Inside This Monorepo
+
+While iterating on the CLI itself:
+
+```bash
+# From repo root
+pnpm exec node packages/create-fast-next/bin/create-fast-next.mjs init tmp/test-app --yes --with-auth
+
+# or use package filtering so dependencies are resolved in the CLI package
+pnpm --filter create-fast-next exec node ./bin/create-fast-next.mjs feature todos --server apps/web/src/server
+```
+
+Because the project is part of the workspace you can also leverage Turbo:
+
+```bash
+pnpm turbo run lint --filter create-fast-next
+pnpm turbo run lint --filter docs
+```
+
+These commands ensure every change to the CLI or docs is validated without publishing anything to npm.
+
+## Checklist Before We Publish
+
+1. `pnpm --filter create-fast-next lint` – Biome clean.
+2. `pnpm --filter create-fast-next test` *(add once a test runner exists)*.
+3. `pnpm --filter create-fast-next pack` – Verify the tarball installs locally.
+4. Run through the “Bootstrap a Fresh Next.js App” flow to ensure real-world onboarding works.
+5. Update `apps/docs/content/docs/cli.mdx` (and this page) whenever flags or commands change.
+
+With this workflow we can keep iterating on `create-fast-next` while providing a smooth experience to anyone pulling the repo and trying it ahead of the npm release.

@@ -589,7 +589,7 @@ export async function list${pascal}() {
 
 export async function create${pascal}(input: Pick<${pascal}, "name" | "status">) {
   const next: ${pascal} = {
-    id: `${camel}-\${Date.now()}`,
+    id: "${camel}-" + Date.now(),
     name: input.name,
     status: input.status ?? "draft",
   };
@@ -1390,11 +1390,11 @@ export class QueueService {
     });
 
     worker.on("completed", (job) => {
-      console.log(`[queue:${name}] job ${job.id} completed`);
+      console.log("[queue:" + name + "] job " + job.id + " completed");
     });
 
     worker.on("failed", (job, error) => {
-      console.error(`[queue:${name}] job ${job?.id} failed`, error);
+      console.error("[queue:" + name + "] job " + (job?.id ?? "unknown") + " failed", error);
     });
 
     this.workers.set(name, worker);
@@ -1432,7 +1432,7 @@ import { emailQueue, type EmailPayload } from "../queues/email.queue";
 
 queueService.registerWorker<EmailPayload>(emailQueue.name, async (job: Job<EmailPayload>) => {
   const { to, subject, body } = job.data;
-  console.log(`[worker] sending email to ${to}: ${subject}`);
+    console.log("[worker] sending email to " + to + ": " + subject);
   console.log(body);
   return { deliveredAt: Date.now() };
 });
@@ -1467,7 +1467,7 @@ import { queueService } from "../services/queue.service";
 import { ${name}Queue, type ${pascal}Payload } from "../queues/${name}.queue";
 
 queueService.registerWorker<${pascal}Payload>(${name}Queue.name, async (job: Job<${pascal}Payload>) => {
-  console.log(`[${name} worker] received job ${job.name}`, job.data);
+    console.log("[${name} worker] received job " + job.name, job.data);
   return { handledAt: Date.now() };
 });
 `;
@@ -1540,7 +1540,7 @@ export class FastNextMcpServer {
 
   async start(port = Number(process.env.MCP_PORT ?? 3001)) {
     await this.server.listen(port);
-    console.log(`[mcp] server listening on port ${port}`);
+    console.log("[mcp] server listening on port " + port);
   }
 }
 
