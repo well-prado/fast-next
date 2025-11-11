@@ -1847,7 +1847,7 @@ ${providerSwitch}`;
 }
 
 function getQueueServiceTemplate() {
-  return `import { Queue, Worker, QueueScheduler, type JobsOptions, type QueueOptions, type WorkerOptions, type Job } from "bullmq";
+  return `import { Queue, Worker, type JobsOptions, type QueueOptions, type WorkerOptions, type Job } from "bullmq";
 import IORedis from "ioredis";
 
 type QueueConfig = QueueOptions & {
@@ -1863,7 +1863,6 @@ const sharedConnection = new IORedis({
 export class QueueService {
   private queues = new Map<string, Queue>();
   private workers = new Map<string, Worker>();
-  private schedulers = new Map<string, QueueScheduler>();
 
   constructor(private readonly connectionFactory = () => sharedConnection.duplicate()) {}
 
@@ -1883,12 +1882,7 @@ export class QueueService {
       ...options,
     });
 
-    const scheduler = new QueueScheduler(name, {
-      connection: this.connectionFactory(),
-    });
-
     this.queues.set(name, queue);
-    this.schedulers.set(name, scheduler);
     return queue;
   }
 
@@ -2015,22 +2009,34 @@ async function scaffoldDrizzle(projectRoot, serverDirAbs, db, force) {
 }
 
 function getMcpServiceTemplate() {
-  return `import { MCPServer } from "@modelcontextprotocol/sdk";
+  return `import { McpServer } from "@modelcontextprotocol/sdk/dist/esm/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/dist/esm/server/stdio.js";
+import type { ZodRawShape } from "zod";
+
+type TextContent = {
+  type: "text";
+  text: string;
+  _meta?: Record<string, unknown>;
+};
+
+type ToolCallResult = {
+  content: TextContent[];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+};
 
 type ToolConfig = {
   name: string;
   description?: string;
-  inputSchema: Record<string, unknown>;
+  inputSchema?: ZodRawShape;
   handler: (input: unknown) => Promise<unknown>;
 };
 
 export class FastNextMcpServer {
-  private readonly server = new MCPServer({
+  private readonly server = new McpServer({
     name: "fast-next-mcp",
     version: "0.1.0",
-    capabilities: {
-      tools: true,
-    },
   });
 
   private readonly tools = new Map<string, ToolConfig>();
@@ -2040,29 +2046,72 @@ export class FastNextMcpServer {
       return;
     }
     this.tools.set(tool.name, tool);
-    this.server.addTool({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      handler: tool.handler,
-    });
+    this.server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      },
+      async (args: unknown) => normalizeToolResult(await tool.handler(args)),
+    );
   }
 
   listTools() {
-    return Array.from(this.tools.values()).map(({ handler, ...meta }) => meta);
+    return Array.from(this.tools.values()).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
   }
 
   getTool(name: string) {
     return this.tools.get(name);
   }
 
-  async start(port = Number(process.env.MCP_PORT ?? 3001)) {
-    await this.server.listen(port);
-    console.log("[mcp] server listening on port " + port);
+  async start() {
+    const transport = new StdioServerTransport();
+    await this.server.connect(transport);
+    await transport.start();
+    console.log("[mcp] stdio transport started");
   }
 }
 
 export const mcpServer = new FastNextMcpServer();
+
+function normalizeToolResult(result: unknown): ToolCallResult {
+  if (
+    result &&
+    typeof result === "object" &&
+    "content" in result &&
+    Array.isArray((result as { content: unknown }).content)
+  ) {
+    const cast = result as ToolCallResult;
+    return {
+      ...cast,
+      structuredContent: cast.structuredContent ?? {},
+    };
+  }
+
+  const text =
+    typeof result === "string"
+      ? result
+      : JSON.stringify(result ?? { message: "ok" }, null, 2);
+
+  const structuredContent =
+    result && typeof result === "object"
+      ? (result as Record<string, unknown>)
+      : { value: result ?? null };
+
+  return {
+    content: [
+      {
+        type: "text",
+        text,
+      },
+    ],
+    structuredContent,
+  };
+}
 `;
 }
 
@@ -2081,25 +2130,38 @@ function getMcpToolTemplate(name = "ping") {
     name === "ping"
       ? "Return a pong response to test connectivity"
       : `Tool '${name}' generated via CLI`;
-  return `import { mcpServer } from "../../services/mcp/mcp.service";
+  return `import { z } from "zod";
+import { mcpServer } from "../../services/mcp/mcp.service";
+
+const payloadSchema = z.record(z.unknown()).optional().describe("Tool-specific payload");
 
 mcpServer.registerTool({
   name: "${name}",
   description: "${description}",
   inputSchema: {
-    type: "object",
-    properties: {
-      payload: {
-        type: "object",
-        description: "Tool-specific payload",
-      },
-    },
+    payload: payloadSchema,
   },
-  handler: async (input: { payload?: Record<string, unknown> }) => {
+  handler: async (input: unknown) => {
+    const parsed = z
+      .object({
+        payload: payloadSchema,
+      })
+      .safeParse(input);
+
+    const payload = parsed.success ? parsed.data.payload ?? null : null;
+
     return {
-      tool: "${name}",
-      echo: input?.payload ?? null,
-      timestamp: Date.now(),
+      content: [
+        {
+          type: "text",
+          text: "pong",
+        },
+      ],
+      structuredContent: {
+        tool: "${name}",
+        echo: payload,
+        timestamp: Date.now(),
+      },
     };
   },
 });
@@ -2371,7 +2433,9 @@ function getDrizzleSchemaTemplate() {
 export const example = sqliteTable("example", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(Math.floor(Date.now() / 1000)),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .$defaultFn(() => new Date())
+    .notNull(),
 });
 `;
 }
