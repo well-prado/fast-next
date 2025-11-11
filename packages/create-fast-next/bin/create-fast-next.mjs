@@ -501,6 +501,7 @@ import {
 } from "@fast-next/fastify-router";
 import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
+
 // FAST_NEXT_ROUTE_IMPORTS
 
 const userSchema = z.object({
@@ -1315,7 +1316,14 @@ async function injectFeatureImport(routesFile, featureName) {
   }
   const pascal = toPascalCase(featureName);
   const exportName = `${pascal}Routes`;
-  const relativeImport = `./features/${featureName}/routes`;
+  const featureRoutesPath = path.join(
+    path.dirname(routesFile),
+    "..",
+    "features",
+    featureName,
+    "routes.ts",
+  );
+  const relativeImport = toImportPath(path.relative(path.dirname(routesFile), featureRoutesPath));
   const importSnippet = `import { ${exportName} } from "${relativeImport}";\n${importMarker}`;
   const spreadSnippet = `  ...${exportName},\n  ${spreadMarker}`;
   const nextContent = content
