@@ -14,7 +14,8 @@ Everything lives in a single monorepo so you can evolve the DX in lockstep.
 
 | Path | Description |
 | --- | --- |
-| `apps/web` | Next.js 16 app that mounts Fastify, exposes `/api/*`, and demos server-to-server calling. |
+| `apps/web` | Next.js 16 app that mounts Fastify, exposes `/api/*`, and powers the production UI. |
+| `apps/fast-next-playground` | Sandboxed Next.js app showcasing the Fastify bridge at `/demo` (async server component + client hooks) while leaving the default landing page untouched. |
 | `apps/docs` | Placeholder Next.js app (unchanged from the starter). |
 | `docs/fast-next` | MDX documentation for this stack (introduction, quickstart, architecture, feature guides). |
 | `packages/fastify-next-adapter` | Bridges `NextRequest` to `fastify.inject` (headers, body, binary safe). |

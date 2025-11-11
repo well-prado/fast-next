@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import type { Auth, BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
-import { nextCookies, toNextJsHandler } from "better-auth/integrations/next-js";
+import { nextCookies, toNextJsHandler } from "better-auth/next-js";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
 export type { Auth, BetterAuthOptions, BetterAuthPlugin };

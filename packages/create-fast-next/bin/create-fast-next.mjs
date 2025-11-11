@@ -165,6 +165,17 @@ async function runInit(options) {
   const featuresDir = path.join(serverDirAbs, "features");
   const authServiceFile = path.join(serverDirAbs, "services", "auth", "better-auth.ts");
   const authRouteFile = path.join(appDirAbs, "api", "auth", "[...betterAuth]", "route.ts");
+  const demoPageFile = path.join(appDirAbs, "demo", "page.tsx");
+  const clientApiFile = path.join(projectRoot, "client", "api.ts");
+  const clientComponentDir = path.join(projectRoot, "components");
+  const projectsClientPanelFile = path.join(
+    clientComponentDir,
+    "projects-client-panel.tsx",
+  );
+  const projectsClientPanelCssFile = path.join(
+    clientComponentDir,
+    "projects-client-panel.module.css",
+  );
 
   await ensureDir(path.dirname(routeFile));
   await ensureDir(path.dirname(fastifyAppFile));
@@ -190,6 +201,10 @@ async function runInit(options) {
   await writeFile(routesFile, getRoutesIndexTemplate(), force);
   await writeFile(apiHelperFile, getServerApiTemplate(), force);
   await writeFile(path.join(featuresDir, ".gitkeep"), "", false);
+  await writeFile(clientApiFile, getBrowserClientTemplate(), force);
+  await writeFile(projectsClientPanelFile, getProjectsClientPanelTemplate(), force);
+  await writeFile(projectsClientPanelCssFile, getProjectsClientPanelCss(), force);
+  await writeFile(demoPageFile, getDemoPageTemplate(), force);
 
   const dependencySet = new Set(CORE_DEPENDENCIES);
   const postInitNotes = [];
@@ -275,6 +290,9 @@ async function runInit(options) {
     "1. Ensure your tsconfig.json maps '@/*' to your source directory if you plan to use alias imports.",
   );
   console.log("2. Start Next.js with 'pnpm dev' and hit /api/health to verify the bridge.");
+  console.log(
+    "3. Visit /demo to exercise the server action + client hook playground that ships with the scaffold.",
+  );
   if (postInitNotes.length) {
     console.log("\nAdditional notes:");
     postInitNotes.forEach((note) => {
@@ -521,6 +539,470 @@ const builtRouter = {
 export const serverCaller = createServerCaller(builtRouter);
 export const api = createServerClient(serverRoutes, serverCaller);
 export const queryClient = new FastifyQueryClient();
+`;
+}
+
+function getBrowserClientTemplate() {
+  return `"use client";
+
+import { createBrowserClient } from "@fast-next/fastify-browser-client";
+import { FastifyQueryClient } from "@fast-next/fastify-query-client";
+import { serverRoutes } from "@/server/routes";
+
+const clientQueryCache = new FastifyQueryClient();
+
+export const api = createBrowserClient(serverRoutes, {
+  baseUrl: "/api",
+  queryClient: clientQueryCache,
+});
+`;
+}
+
+function getProjectsClientPanelTemplate() {
+  return `"use client";
+
+import { useMemo, useState, type FormEvent } from "react";
+import { api } from "@/client/api";
+import styles from "./projects-client-panel.module.css";
+
+const STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+] as const;
+
+export function ProjectsClientPanel() {
+  const [projectName, setProjectName] = useState("");
+  const [status, setStatus] =
+    useState<(typeof STATUS_OPTIONS)[number]["value"]>("draft");
+
+  const query = api.projects.list.useQuery({
+    refetchOnWindowFocus: false,
+  });
+  const mutation = api.projects.create.useMutation({
+    invalidate: { resource: "projects" },
+  });
+
+  const projects = useMemo(
+    () => query.response?.data?.items ?? [],
+    [query.response],
+  );
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    mutation.mutate({
+      body: {
+        name: projectName || \`Client project \${projects.length + 1}\`,
+        status,
+      },
+    });
+
+    setProjectName("");
+  };
+
+  return (
+    <section className={styles.wrapper}>
+      <header className={styles.header}>
+        <div>
+          <h3>Client-side projects</h3>
+          <p>Browser API with TanStack-style hooks.</p>
+        </div>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+          >
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      {query.isError && (
+        <p className={styles.error}>Failed to load projects.</p>
+      )}
+
+      <ul className={styles.list}>
+        {query.isLoading && projects.length === 0 && (
+          <li className={styles.placeholder}>Loading projects…</li>
+        )}
+        {projects.map((project) => (
+          <li key={project.id} className={styles.item}>
+            <span>{project.name}</span>
+            <span className={styles.badge}>{project.status}</span>
+          </li>
+        ))}
+        {!query.isLoading && projects.length === 0 && (
+          <li className={styles.placeholder}>No projects yet.</li>
+        )}
+      </ul>
+
+      <form className={styles.form} onSubmit={handleSubmit}>
+        <input
+          value={projectName}
+          onChange={(event) => setProjectName(event.target.value)}
+          placeholder="New project name"
+          aria-label="Project name"
+        />
+        <select
+          value={status}
+          onChange={(event) =>
+            setStatus(
+              event.target.value as (typeof STATUS_OPTIONS)[number]["value"],
+            )
+          }
+          aria-label="Project status"
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={mutation.isPending}>
+          {mutation.isPending ? "Creating…" : "Create"}
+        </button>
+      </form>
+    </section>
+  );
+}
+`;
+}
+
+function getProjectsClientPanelCss() {
+  return `.wrapper {
+  font-family: var(--font-geist-sans);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-radius: 20px;
+  padding: 24px 26px;
+  background: color-mix(in srgb, var(--background) 97%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  box-shadow:
+    0 12px 30px color-mix(in srgb, var(--foreground) 4%, transparent),
+    0 2px 8px color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.header h3 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.header p {
+  margin: 4px 0 0;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.actions button {
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  padding: 6px 14px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.actions button:hover:not(:disabled) {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+}
+
+.placeholder {
+  font-style: italic;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.badge {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.form input,
+.form select {
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+  background: color-mix(in srgb, var(--background) 98%, transparent);
+  min-width: 140px;
+  flex: 1;
+}
+
+.form button {
+  border-radius: 10px;
+  border: 1px solid var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+  padding: 9px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.form button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  color: var(--background);
+}
+
+.form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+`;
+}
+
+function getDemoPageTemplate() {
+  return `import { revalidatePath } from "next/cache";
+import Image from "next/image";
+import Link from "next/link";
+
+import { ProjectsClientPanel } from "@/components/projects-client-panel";
+import { api } from "@/server/api";
+import type { Project } from "@/server/routes";
+
+const STATUS_OPTIONS = ["draft", "active", "archived"] as const;
+
+async function createDemoProject(formData: FormData) {
+  "use server";
+
+  const rawName = formData.get("name")?.toString().trim();
+  const status = formData.get("status")?.toString() ?? "draft";
+  const normalizedStatus = STATUS_OPTIONS.includes(
+    status as (typeof STATUS_OPTIONS)[number],
+  )
+    ? (status as (typeof STATUS_OPTIONS)[number])
+    : "draft";
+  const name =
+    rawName && rawName.length > 0
+      ? rawName
+      : \`Playground project \${Date.now().toString().slice(-4)}\`;
+
+  await api.projects.create.mutate({
+    body: {
+      name,
+      status: normalizedStatus,
+    },
+  });
+
+  revalidatePath("/demo");
+}
+
+export default async function DemoPage() {
+  const [healthResult, projectsResult] = await Promise.all([
+    api.system.health.query().catch(() => null),
+    api.projects.list.query().catch(() => null),
+  ]);
+
+  const projects = (projectsResult?.data?.items ?? []) as Project[];
+  const recentProjects = projects.slice(0, 5);
+  const health = healthResult?.data?.status ?? "unknown";
+
+  return (
+    <div className="min-h-screen bg-background px-6 py-12 text-foreground sm:px-10 lg:px-24">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+        <header className="flex flex-col gap-6 rounded-3xl border border-border/60 bg-background/80 p-6 shadow-lg shadow-black/5 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.3em] text-foreground/70">
+                Fast Next demo
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold leading-tight">
+                Server + Client Fastify playground
+              </h1>
+            </div>
+            <Link
+              href="/"
+              className="rounded-full border border-foreground/30 px-4 py-2 text-sm font-medium transition hover:border-foreground hover:bg-foreground hover:text-background"
+            >
+              ← Back home
+            </Link>
+          </div>
+          <p className="text-base text-foreground/80">
+            This page renders server data directly from{" "}
+            <code className="rounded bg-foreground/10 px-2 py-1 text-xs">
+              api.system.health
+            </code>{" "}
+            and{" "}
+            <code className="rounded bg-foreground/10 px-2 py-1 text-xs">
+              api.projects.list
+            </code>{" "}
+            while the panel below uses the generated browser client to mutate
+            through Fastify routes.
+          </p>
+        </header>
+
+        <div className="grid gap-8 lg:grid-cols-2">
+          <ServerShowcase
+            health={health}
+            projects={projects}
+            recentProjects={recentProjects}
+          />
+          <ProjectsClientPanel />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ServerShowcase({
+  health,
+  projects,
+  recentProjects,
+}: {
+  health: string;
+  projects: Project[];
+  recentProjects: Project[];
+}) {
+  const ok = health === "ok";
+
+  return (
+    <section className="flex h-full flex-col gap-6 rounded-3xl border border-border/70 bg-background/80 p-6 shadow-lg shadow-black/5 backdrop-blur">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.4em] text-foreground/60">
+            Server rendered
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold">Fastify API snapshot</h2>
+        </div>
+        <Image
+          src="/next.svg"
+          alt="Next.js Logo"
+          width={90}
+          height={20}
+          className="dark:invert"
+        />
+      </div>
+
+      <dl className="space-y-3 text-sm">
+        <div className="flex items-center justify-between">
+          <dt>Status</dt>
+          <dd
+            className={\`rounded-full px-3 py-1 text-xs font-semibold uppercase \${ ok
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100"
+                : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-100"\}\`}
+          >
+            {health}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between">
+          <dt>Summary</dt>
+          <dd className="text-right text-base font-medium">
+            {ok ? "Fastify is serving requests" : "Check server connection"}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between">
+          <dt>Total projects</dt>
+          <dd className="font-mono text-lg">{projects.length}</dd>
+        </div>
+      </dl>
+
+      {recentProjects.length > 0 && (
+        <div className="rounded-2xl border border-border/50 bg-background/70 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-foreground/50">
+            Recent projects
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {recentProjects.map((project) => (
+              <li
+                key={project.id ?? project.name}
+                className="flex items-center justify-between"
+              >
+                <span className="truncate">{project.name}</span>
+                <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                  {project.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <form
+        action={createDemoProject}
+        className="mt-auto flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-xs sm:flex-row"
+      >
+        <label className="sr-only" htmlFor="project-name">
+          Project name
+        </label>
+        <input
+          id="project-name"
+          name="name"
+          placeholder="New project name"
+          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
+        />
+        <label className="sr-only" htmlFor="project-status">
+          Project status
+        </label>
+        <select
+          id="project-status"
+          name="status"
+          defaultValue="draft"
+          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground sm:max-w-[140px]"
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option.charAt(0).toUpperCase() + option.slice(1)}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          className="rounded-lg border border-foreground px-4 py-1.5 text-sm font-medium text-foreground transition hover:bg-foreground hover:text-background"
+        >
+          Add
+        </button>
+      </form>
+    </section>
+  );
+}
 `;
 }
 

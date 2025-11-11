@@ -30,6 +30,7 @@ pnpm dlx create-fast-next init [projectDir] \
 - Sets up `src/server/fastify-app.ts`, `src/server/routes/index.ts`, and `src/server/api.ts`.
 - Adds placeholder markers (`FAST_NEXT_ROUTE_IMPORTS` / `FAST_NEXT_ROUTE_SPREAD`) so future features can be appended automatically.
 - Drops a starter health-check route so `/api/health` responds immediately.
+- Generates a `/demo` page (`app/demo/page.tsx`), browser client (`client/api.ts`), and `ProjectsClientPanel` component so you can validate server actions + client hooks without modifying the default Next.js home page.
 - Prompts for directories when flags aren’t provided (disable with `--yes`).
 - Optionally updates `package.json` and installs all required dependencies when `--install auto|pnpm|npm|yarn|bun` is supplied (or when you accept the prompt).
 
