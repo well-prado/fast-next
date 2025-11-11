@@ -494,15 +494,101 @@ ${pluginsLine}    configureApp: registerRoutes,
 
 function getRoutesIndexTemplate() {
   return `import type { FastifyInstance } from "fastify";
-import { createRoute, registerRoutes as registerFastifyRoutes, type FastifyRouteDefinition } from "@fast-next/fastify-router";
+import {
+  createRoute,
+  registerRoutes as registerFastifyRoutes,
+  type FastifyRouteDefinition,
+} from "@fast-next/fastify-router";
 import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
 // FAST_NEXT_ROUTE_IMPORTS
+
+const userSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  title: z.string(),
+});
+
+const errorSchema = z.object({
+  error: z.string(),
+});
+
+const projectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["draft", "active", "archived"]),
+});
+
+const USERS = [
+  {
+    id: "1",
+    name: "Ada Lovelace",
+    email: "ada@example.com",
+    title: "Analyst",
+  },
+  {
+    id: "2",
+    name: "Alan Turing",
+    email: "alan@example.com",
+    title: "Researcher",
+  },
+  {
+    id: "3",
+    name: "Grace Hopper",
+    email: "grace@example.com",
+    title: "Commodore",
+  },
+] as const;
+
+const initialProjects: Project[] = [
+  { id: "p1", name: "DX Overhaul", status: "active" },
+  { id: "p2", name: "Edge API Gateway", status: "draft" },
+  { id: "p3", name: "Realtime Sync", status: "archived" },
+];
+
+let projects: Project[] = [...initialProjects];
 
 const healthSchema = {
   response: z.object({
     status: z.literal("ok"),
   }),
+} as const;
+
+const getUserSchema = {
+  params: z.object({
+    id: z.string(),
+  }),
+  response: {
+    200: userSchema,
+    404: errorSchema,
+  },
+} as const;
+
+const listProjectsSchema = {
+  response: z.object({
+    items: z.array(projectSchema),
+  }),
+} as const;
+
+const getProjectSchema = {
+  params: z.object({
+    id: z.string(),
+  }),
+  response: {
+    200: projectSchema,
+    404: errorSchema,
+  },
+} as const;
+
+const createProjectSchema = {
+  body: z.object({
+    name: z.string().min(3),
+    status: projectSchema.shape.status.optional().default("draft"),
+  }),
+  response: {
+    201: projectSchema,
+  },
 } as const;
 
 export const serverRoutes = [
@@ -512,16 +598,84 @@ export const serverRoutes = [
     resource: "system",
     operation: "health",
     schema: healthSchema,
-    handler: (async () => ({ status: "ok" as const })) satisfies TypedRouteHandler<typeof healthSchema>,
+    handler: (async () => {
+      return { status: "ok" as const };
+    }) satisfies TypedRouteHandler<typeof healthSchema>,
+  }),
+  createRoute({
+    method: "GET",
+    path: "/users/:id",
+    resource: "users",
+    operation: "get",
+    schema: getUserSchema,
+    handler: (async (request, reply) => {
+      const user = USERS.find((candidate) => candidate.id === request.params.id);
+
+      if (!user) {
+        reply.code(404);
+        return { error: "User not found" };
+      }
+
+      return user;
+    }) satisfies TypedRouteHandler<typeof getUserSchema>,
+  }),
+  createRoute({
+    method: "GET",
+    path: "/projects",
+    resource: "projects",
+    operation: "list",
+    schema: listProjectsSchema,
+    handler: (async () => ({
+      items: projects,
+    })) satisfies TypedRouteHandler<typeof listProjectsSchema>,
+  }),
+  createRoute({
+    method: "GET",
+    path: "/projects/:id",
+    resource: "projects",
+    operation: "get",
+    schema: getProjectSchema,
+    handler: (async ({ params }, reply) => {
+      const project = projects.find((candidate) => candidate.id === params.id);
+
+      if (!project) {
+        reply.code(404);
+        return { error: "Project not found" };
+      }
+
+      return project;
+    }) satisfies TypedRouteHandler<typeof getProjectSchema>,
+  }),
+  createRoute({
+    method: "POST",
+    path: "/projects",
+    resource: "projects",
+    operation: "create",
+    schema: createProjectSchema,
+    handler: (async (request, reply) => {
+      const payload = request.body;
+      const newProject = {
+        id: \`p\${projects.length + 1}\`,
+        name: payload.name,
+        status: payload.status ?? "draft",
+      } as const;
+
+      projects = [...projects, newProject];
+      reply.code(201);
+      return newProject;
+    }) satisfies TypedRouteHandler<typeof createProjectSchema>,
   }),
   // FAST_NEXT_ROUTE_SPREAD
 ] as const satisfies readonly FastifyRouteDefinition[];
 
+export type ServerRoutes = typeof serverRoutes;
+export type ServerRoute = ServerRoutes[number];
+export type User = z.infer<typeof userSchema>;
+export type Project = z.infer<typeof projectSchema>;
+
 export async function registerRoutes(app: FastifyInstance) {
   await registerFastifyRoutes(app, serverRoutes);
 }
-
-export type ServerRoutes = typeof serverRoutes;
 `;
 }
 
@@ -976,7 +1130,7 @@ function ServerShowcase({
           id="project-name"
           name="name"
           placeholder="New project name"
-          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
+          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
         />
         <label className="sr-only" htmlFor="project-status">
           Project status
@@ -985,7 +1139,7 @@ function ServerShowcase({
           id="project-status"
           name="status"
           defaultValue="draft"
-          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground sm:max-w-[140px]"
+          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground sm:max-w-[140px]"
         >
           {STATUS_OPTIONS.map((option) => (
             <option key={option} value={option}>
