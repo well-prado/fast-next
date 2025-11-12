@@ -22,7 +22,7 @@
     "@fast-next/fastify-query-client": "^0.1.2",
     "@fast-next/fastify-router": "^0.1.2",
     "@fast-next/fastify-server-caller": "^0.1.2",
-    "@fast-next/fastify-zod-router": "^0.1.2"
+    "@fast-next/fastify-zod-router": "^0.1.4"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
