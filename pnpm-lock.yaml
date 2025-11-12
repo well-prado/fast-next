@@ -167,6 +167,76 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  apps/web:
+    dependencies:
+      '@fast-next/fastify-app-factory':
+        specifier: workspace:^
+        version: link:../../packages/fastify-app-factory
+      '@fast-next/fastify-browser-client':
+        specifier: workspace:^
+        version: link:../../packages/fastify-browser-client
+      '@fast-next/fastify-next-adapter':
+        specifier: workspace:^
+        version: link:../../packages/fastify-next-adapter
+      '@fast-next/fastify-query-client':
+        specifier: workspace:^
+        version: link:../../packages/fastify-query-client
+      '@fast-next/fastify-router':
+        specifier: workspace:^
+        version: link:../../packages/fastify-router
+      '@fast-next/fastify-server-caller':
+        specifier: workspace:^
+        version: link:../../packages/fastify-server-caller
+      '@fast-next/fastify-server-client':
+        specifier: workspace:^
+        version: link:../../packages/fastify-server-client
+      '@fast-next/fastify-zod-router':
+        specifier: workspace:^
+        version: link:../../packages/fastify-zod-router
+      fastify:
+        specifier: ^5.6.2
+        version: 5.6.2
+      fastify-type-provider-zod:
+        specifier: ^6.1.0
+        version: 6.1.0(@fastify/swagger@9.6.0)(fastify@5.6.2)(openapi-types@12.1.3)(zod@4.1.12)
+      next:
+        specifier: 16.0.1
+        version: 16.0.1(@babel/core@7.28.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      react:
+        specifier: 19.2.0
+        version: 19.2.0
+      react-dom:
+        specifier: 19.2.0
+        version: 19.2.0(react@19.2.0)
+      zod:
+        specifier: ^4.1.12
+        version: 4.1.12
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4
+        version: 4.1.17
+      '@types/node':
+        specifier: ^20
+        version: 20.19.24
+      '@types/react':
+        specifier: ^19
+        version: 19.2.2
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.2(@types/react@19.2.2)
+      eslint:
+        specifier: ^9
+        version: 9.39.1(jiti@2.6.1)
+      eslint-config-next:
+        specifier: 16.0.1
+        version: 16.0.1(@typescript-eslint/parser@8.46.4(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
+      tailwindcss:
+        specifier: ^4
+        version: 4.1.17
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   packages/biome-config:
     devDependencies:
       '@biomejs/biome':

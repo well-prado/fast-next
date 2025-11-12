@@ -1,5 +1,6 @@
 export { createRouter } from "./create-router";
 export { defineRoute } from "./define-route";
+export { z } from "zod";
 export type {
   BuiltRouter,
   HttpMethod,
