@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { buildFastifySchema } from "./json-schema";
 import type {
   BuiltRouter,
   RouteConfig,
@@ -32,10 +31,10 @@ function createRouterBuilder<TRoutes extends readonly RouteDefinition[]>(
     registry.push({
       method,
       path,
-      config,
+      config: config as unknown as RouteConfig<RouteSchema, RouteMeta>,
     });
 
-    type NextRoute = RouteDefinitionWith<TMethod, TPath, TSchema, TMeta>;
+    type NextRoute = RouteDefinitionWith<TMethod, TPath, RouteSchema, TMeta>;
 
     return createRouterBuilder<[...TRoutes, NextRoute]>(registry);
   };
@@ -96,7 +95,7 @@ function createRouterBuilder<TRoutes extends readonly RouteDefinition[]>(
             app.route({
               method: routeDefinition.method,
               url,
-              schema: buildFastifySchema(routeDefinition.config.schema),
+              schema: routeDefinition.config.schema,
               handler: routeDefinition.config.handler,
             });
           });

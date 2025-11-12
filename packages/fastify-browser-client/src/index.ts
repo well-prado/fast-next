@@ -29,7 +29,9 @@ export interface BrowserClientOptions {
   queryClient?: FastifyQueryClient;
 }
 
-export function createBrowserClient<TRoutes extends readonly FastifyRouteDefinition[]>(
+export function createBrowserClient<
+  TRoutes extends readonly FastifyRouteDefinition<HttpMethod, string, any, string, string>[],
+>(
   routes: TRoutes,
   options: BrowserClientOptions = {},
 ): BrowserClient<TRoutes> {
@@ -97,7 +99,12 @@ function createOperationDescriptor<Route extends FastifyRouteDefinition>(
 ): OperationDescriptor<Route> {
   const invoke: OperationInvoker<Route> = async (options) => {
     const response = await transport.fetchImpl(
-      buildUrl(transport.baseUrl, route.path, options?.params, options?.query),
+      buildUrl(
+        transport.baseUrl,
+        route.path,
+        normalizeRecord(options?.params),
+        normalizeRecord(options?.query),
+      ),
       buildRequestInit(route.method, options, transport),
     );
 
@@ -364,6 +371,13 @@ function buildQueryString(query?: Record<string, unknown>) {
 
 function ensureStartsWithSlash(input: string) {
   return input.startsWith("/") ? input : `/${input}`;
+}
+
+function normalizeRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
 }
 
 async function toOperationResponse<Route extends FastifyRouteDefinition>(

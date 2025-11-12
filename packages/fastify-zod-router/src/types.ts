@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteGenericInterface } from "fastify";
-import type { ZodTypeAny } from "zod";
+import type { ZodTypeAny, infer as ZodInfer } from "zod";
 
 export type AnyZod = ZodTypeAny;
 
@@ -16,18 +16,18 @@ export interface RouteSchema {
   response?: RouteResponseSchema;
 }
 
-type InferOrUnknown<T extends AnyZod | undefined> = T extends AnyZod ? T["_output"] : unknown;
+type InferOrUnknown<T extends AnyZod | undefined> = T extends AnyZod ? ZodInfer<T> : any;
 
 type ResponseUnion<
   TSchema extends RouteSchema,
   TResponse = TSchema["response"],
 > = TResponse extends AnyZod
-  ? TResponse["_output"]
+  ? ZodInfer<TResponse>
   : TResponse extends Record<string | number, AnyZod>
     ? {
-        [K in keyof TResponse]: TResponse[K] extends AnyZod ? TResponse[K]["_output"] : never;
+        [K in keyof TResponse]: TResponse[K] extends AnyZod ? ZodInfer<TResponse[K]> : never;
       }[keyof TResponse]
-    : unknown;
+    : any;
 
 export type RouteGenericFromSchema<TSchema extends RouteSchema> = RouteGenericInterface & {
   Body: InferOrUnknown<TSchema["body"]>;
@@ -42,6 +42,10 @@ export type TypedRouteHandler<TSchema extends RouteSchema> = (
   reply: FastifyReply,
 ) => Promise<unknown> | unknown;
 
+type BivariantRouteHandler<TSchema extends RouteSchema> = {
+  bivarianceHack: TypedRouteHandler<TSchema>;
+}["bivarianceHack"];
+
 export interface RouteMeta<TResource extends string = string, TOperation extends string = string> {
   resource: TResource;
   operation: TOperation;
@@ -49,7 +53,7 @@ export interface RouteMeta<TResource extends string = string, TOperation extends
 
 export interface RouteConfig<TSchema extends RouteSchema, TMeta extends RouteMeta = RouteMeta> {
   schema: TSchema;
-  handler: TypedRouteHandler<TSchema>;
+  handler: BivariantRouteHandler<TSchema>;
   meta: TMeta;
 }
 
@@ -79,45 +83,47 @@ export interface RouterRegisterOptions {
 }
 
 export interface BuiltRouter<
-  TRoutes extends readonly RouteDefinition[] = readonly RouteDefinition[],
+  TRoutes extends readonly RouteDefinition<any, any>[] = readonly RouteDefinition<any, any>[],
 > {
   routes: TRoutes;
   register: (app: FastifyInstance, options?: RouterRegisterOptions) => Promise<void> | void;
 }
 
-export interface RouterBuilder<TRoutes extends readonly RouteDefinition[] = readonly []> {
+export interface RouterBuilder<
+  TRoutes extends readonly RouteDefinition<any, any>[] = readonly [],
+> {
   route<TPath extends string, TMethod extends HttpMethod, TSchema extends RouteSchema>(
     method: TMethod,
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<TMethod, TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<TMethod, TPath, RouteSchema>]>;
   get<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"GET", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"GET", TPath, RouteSchema>]>;
   post<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"POST", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"POST", TPath, RouteSchema>]>;
   put<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"PUT", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"PUT", TPath, RouteSchema>]>;
   patch<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"PATCH", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"PATCH", TPath, RouteSchema>]>;
   delete<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"DELETE", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"DELETE", TPath, RouteSchema>]>;
   head<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"HEAD", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"HEAD", TPath, RouteSchema>]>;
   options<TPath extends string, TSchema extends RouteSchema>(
     path: TPath,
     config: RouteConfig<TSchema>,
-  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"OPTIONS", TPath, TSchema>]>;
+  ): RouterBuilder<[...TRoutes, RouteDefinitionWith<"OPTIONS", TPath, RouteSchema>]>;
   build(): BuiltRouter<TRoutes>;
 }

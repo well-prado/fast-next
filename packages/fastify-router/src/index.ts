@@ -1,12 +1,11 @@
 import {
-  buildFastifySchema,
   type HttpMethod,
   type RouteDefinition,
   type RouteMeta,
   type RouteSchema,
   type TypedRouteHandler,
 } from "@fast-next/fastify-zod-router";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifySchema } from "fastify";
 
 export type FastifyRouteDefinition<
   TMethod extends HttpMethod = HttpMethod,
@@ -14,7 +13,7 @@ export type FastifyRouteDefinition<
   TSchema extends RouteSchema = RouteSchema,
   TResource extends string = string,
   TOperation extends string = string,
-> = RouteDefinition<TSchema, RouteMeta<TResource, TOperation>> & {
+> = RouteDefinition<RouteSchema, RouteMeta<TResource, TOperation>> & {
   readonly method: TMethod;
   readonly path: TPath;
   readonly config: {
@@ -49,7 +48,7 @@ export function createRoute<
         operation: config.operation,
       },
     },
-  } as const;
+  } as FastifyRouteDefinition<TMethod, TPath, TSchema, TResource, TOperation>;
 }
 
 export async function registerRoutes(
@@ -60,7 +59,7 @@ export async function registerRoutes(
     await app.route({
       method: route.method,
       url: route.path,
-      schema: buildFastifySchema(route.config.schema),
+      schema: route.config.schema as unknown as FastifySchema,
       handler: route.config.handler,
     });
   }

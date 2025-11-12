@@ -1,0 +1,45 @@
+{
+  "name": "fast-next-playground",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@fast-next/better-auth": "workspace:^",
+    "@fast-next/fastify-app-factory": "workspace:^",
+    "@fast-next/fastify-browser-client": "workspace:^",
+    "@fast-next/fastify-next-adapter": "workspace:^",
+    "@fast-next/fastify-query-client": "workspace:^",
+    "@fast-next/fastify-router": "workspace:^",
+    "@fast-next/fastify-server-caller": "workspace:^",
+    "@fast-next/fastify-server-client": "workspace:^",
+    "@fast-next/fastify-zod-router": "workspace:^",
+    "@fastify/cors": "^11.1.0",
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.4.1",
+    "drizzle-kit": "^0.31.6",
+    "drizzle-orm": "^0.44.7",
+    "fastify": "^5.6.2",
+    "fastify-type-provider-zod": "^6.1.0",
+    "ioredis": "^5.8.2",
+    "next": "16.0.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

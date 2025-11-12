@@ -14,10 +14,10 @@ Everything lives in a single monorepo so you can evolve the DX in lockstep.
 
 | Path | Description |
 | --- | --- |
-| `apps/web` | Next.js 16 app that mounts Fastify, exposes `/api/*`, and powers the production UI. |
-| `apps/fast-next-playground` | Sandboxed Next.js app showcasing the Fastify bridge at `/demo` (async server component + client hooks) while leaving the default landing page untouched. |
-| `apps/docs` | Placeholder Next.js app (unchanged from the starter). |
+| `apps/fast-next-playground` | Canonical Next.js 16 + Fastify playground. Ships the new `src/server/http` layout, `/demo` showcase, MCP, cache, etc. |
+| `apps/docs` | Fumadocs-powered reference site (quickstart, router guide, CLI reference). |
 | `docs/fast-next` | MDX documentation for this stack (introduction, quickstart, architecture, feature guides). |
+| `packages/create-fast-next` | CLI that scaffolds Fast Next projects (new server/http structure, optional auth/cache/queue/MCP/Docker modules). |
 | `packages/fastify-next-adapter` | Bridges `NextRequest` to `fastify.inject` (headers, body, binary safe). |
 | `packages/fastify-app-factory` | Singleton Fastify factory with plugin hooks + dev-safe global cache. |
 | `packages/fastify-zod-router` | Router builder that captures method/path/schema metadata and emits JSON Schema for Fastify validation. |
@@ -46,8 +46,8 @@ pnpm install
 # Run everything in dev mode (Turbo fanning out to all packages)
 pnpm dev
 
-# Just run the web app on port 3000
-pnpm --filter web dev
+# Just run the playground app on port 3000
+pnpm --filter fast-next-playground dev
 
 # Type-check all workspaces
 pnpm check-types
@@ -58,7 +58,7 @@ pnpm lint
 
 ### Hitting the APIs
 
-After `pnpm --filter web dev`:
+After `pnpm --filter fast-next-playground dev`:
 
 ```bash
 curl http://localhost:3000/api/health
@@ -73,94 +73,114 @@ Both go through the adapter → Fastify route you author in one place.
 
 ### 1. Author routes with Zod once
 
-Location: `apps/web/src/server/routes/index.ts`
+Example: `apps/fast-next-playground/src/server/http/routes/projects/list-projects.ts`
 
 ```ts
-export const coreRouter = createRouter()
-  .get("/users/:id", {
-    schema: {
-      params: z.object({ id: z.string() }),
-      response: {
-        200: userSchema,
-        404: z.object({ error: z.string() }),
-      },
-    },
-    handler: async (request, reply) => {
-      const user = USERS.find((u) => u.id === request.params.id);
-      if (!user) {
-        reply.code(404);
-        return { error: "User not found" };
-      }
-      return user;
-    },
-  })
-  .build();
+import { createRoute } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+import { listProjects, projectSchema } from "./store";
+
+const schema = {
+  response: z.object({
+    items: z.array(projectSchema),
+  }),
+} as const;
+
+export const listProjectsRoute = createRoute({
+  method: "GET",
+  path: "/projects",
+  resource: "projects",
+  operation: "list",
+  schema,
+  handler: (async () => ({ items: listProjects() })) satisfies TypedRouteHandler<typeof schema>,
+});
 ```
 
-- `createRouter` stores method/path/schema metadata for every call.
-- Zod schemas are converted to Fastify JSON Schema automatically.
-- Handler types (params, body, reply) are inferred from the schema.
+- Each feature owns `schemas.ts`, `service.ts`, and `routes.ts` inside `src/server/http/routes/<feature>/`.  
+- `createRoute` keeps literal `resource` + `operation` names so `api.projects.list.*` autocompletes automatically.  
+- Zod schemas feed Fastify validation and typed handlers in one place.
 
-### 2. Register routes once
+### 2. Register feature routers once
 
-`apps/web/src/server/fastify-app.ts`
+`apps/fast-next-playground/src/server/http/routes/index.ts`
 
 ```ts
-export function getAppInstance() {
-  return getFastifyApp({
-    configureApp: registerCoreRoutes, // loads the router above
-  });
+import { systemRoutes } from "./system";
+import { projectRoutes } from "./projects";
+import { McpRoutes } from "../../features/mcp/routes";
+
+export const serverRoutes = [
+  ...systemRoutes,
+  ...projectRoutes,
+  ...McpRoutes,
+] as const;
+
+export async function registerHttpRoutes(app: FastifyInstance) {
+  await registerFastifyRoutes(app, serverRoutes);
 }
 ```
 
-`registerCoreRoutes` simply does `await coreRouter.register(app);`.
+FAST_NEXT markers keep this file tidy when the CLI inserts new imports/spreads.
 
-### 3. Surface them through Next’s App Router
+### 3. Mount Fastify + middleware
 
-Catch-all route: `apps/web/app/api/[...fastify]/route.ts`
+`apps/fast-next-playground/src/server/http/server.ts`
+
+```ts
+export async function registerHttpServer(app: FastifyInstance) {
+  app.withTypeProvider<ZodTypeProvider>();
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+  app.setErrorHandler(errorHandler);
+
+  await app.register(fastifyCors);
+  await registerHttpRoutes(app);
+}
+```
+
+`src/server/fastify-app.ts` just forwards to `registerHttpServer`, keeping the singleton factory clean.
+
+### 4. Surface everything through Next’s App Router
+
+Catch-all route: `apps/fast-next-playground/app/api/[...fastify]/route.ts`
 
 ```ts
 const app = await getAppInstance();
 return handleNextRequest(req, app);
 ```
 
-- `handleNextRequest` (adapter package) maps `NextRequest` → `fastify.inject`.
+- `handleNextRequest` (adapter package) maps `NextRequest` → `fastify.inject`.  
 - Binary bodies, multi-value headers (`Set-Cookie`), and base-path stripping (`/api`) are handled for you.
 
-### 4. Call the same handlers directly
+### 5. Call the same handlers directly
 
-`apps/web/src/server/api.ts`
-
-```ts
-export const serverCaller = createServerCaller(mergedRouter);
-
-export const api = {
-  call: serverCaller,
-  routes: buildPathApi(mergedRouter.routes, serverCaller),
-  ...buildMethodApi(mergedRouter.routes, serverCaller),
-};
-
-export const queryClient = new FastifyQueryClient(api);
-```
-
-The `api.get` / `api.post` objects are generated automatically from the router metadata, so every new Fastify route shows up as an ergonomic chain. Usage in any Server Component:
+`apps/fast-next-playground/src/server/api.ts`
 
 ```ts
-const user = await api.get.user.query({
-  params: { id: "1" },
-});
+const builtRouter = {
+  routes: serverRoutes,
+  register: registerHttpRoutes,
+} satisfies BuiltRouter<typeof serverRoutes>;
 
-const projects = await api.get.projects.query();
-
-// TanStack-style helper
-const stats = await queryClient.fetchQuery("system", "health");
+export const serverCaller = createServerCaller(builtRouter);
+const typedServerRoutes = serverRoutes as readonly FastifyRouteDefinition[];
+const typedServerCaller = serverCaller as FastifyCaller<typeof typedServerRoutes>;
+export const api = createServerClient(typedServerRoutes, typedServerCaller);
+export const queryClient = new FastifyQueryClient();
 ```
 
-Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available. Either way this never leaves the process: we fabricate a Fastify `request`/`reply`, run the handler, and return `{ statusCode, headers, body }`. Input/output types come from the same Zod schemas you already wrote, and the client advertises the available endpoints automatically.
+- `api.system.health.request()` and `api.projects.list.request()` run handlers without touching the network (great for Server Components, jobs, tests).  
+- The generated browser client (`@/client/api`) provides `useQuery`/`useMutation` hooks backed by the same metadata.  
+- Prefer raw paths? `api.routes["/projects"].get.request()` is still there.
 
-### 5. Showcase in the UI
+### 6. Showcase in `/demo`
 
-`apps/web/app/page.tsx` fetches data through `api.get.user.query` / `api.get.projects.query` so you can see the pattern end-to-end, and you can batch multiple calls with `queryClient.fetchMany([...])` when needed.
+`apps/fast-next-playground/app/demo/page.tsx` renders both sides:
+
+- The **server** panel awaits `api.system.health.request()` + `api.projects.list.request()` inside an async Server Component to prove everything stays in-process.  
+- The **client** panel imports the browser client, uses `useQuery`/`useMutation`, and shares a `FastifyQueryClient` cache so invalidations rehydrate automatically.
 
 ---
 
@@ -192,19 +212,20 @@ Prefer raw paths? `api.routes["/users/:id"].get(...)` is still available. Either
 
 ### CLI (`create-fast-next`)
 
-- `pnpm dlx create-fast-next init .` scaffolds the catch-all API route plus `src/server/{fastify-app,routes,api}.ts`.
-- `pnpm dlx create-fast-next feature analytics` drops a new `src/server/features/analytics/routes.ts` file and wires it into the master `serverRoutes` array.
+- `pnpm dlx create-fast-next init .` scaffolds the catch-all API route plus the full `src/server/http/{routes,server}` layout, MCP skeleton, cache service, and `src/server/api.ts` helpers.
+- `pnpm dlx create-fast-next feature analytics` drops a new `src/server/http/routes/analytics` folder (schemas/service/routes) and wires it into `registerHttpRoutes` via FAST_NEXT markers.
 - Add `--install auto`, `--with-queue`, `--with-cache redis|upstash|memory`, `--with-mcp`, or `--with-docker` to tailor the scaffolded stack. Use `--app/--server/--api` to point at custom directories.
+- The CLI also patches `tsconfig.json` to map `@/*` to both `src/*` and project root so the generated alias imports resolve instantly.
 - See `docs/fast-next/cli.mdx` for the full option list.
 
 ---
 
 ## Building Your Own Feature
 
-1. **Add schemas/handlers** in `apps/web/src/server/features/<feature>/routes.ts` (feel free to split files; then import/register in `registerCoreRoutes`).
-2. **Re-export** the router or handlers for reuse (client generation, server caller, etc.).
-3. **Expose via HTTP** automatically—no extra Next plumbing needed as long as the route lives under Fastify.
-4. **Consume on the server** with the `api` helpers backed by `serverCaller`. If you need typed HTTP clients later, you already have the route metadata to generate them.
+1. **Add schemas/handlers** inside `src/server/http/routes/<feature>/` (e.g. `schemas.ts`, `service.ts`, `routes.ts`, and an `index.ts` that exports `const <feature>Routes = [...]`).
+2. **Re-export** the feature from `src/server/http/routes/index.ts` (FAST_NEXT markers mean `create-fast-next feature <name>` does this automatically).
+3. **Expose via HTTP** automatically—the catch-all route just sees the Fastify app, so no extra Next plumbing is needed.
+4. **Consume on the server** with the generated `api` helpers or the browser hooks. Because everything flows from the same `serverRoutes` metadata, future client codegen is trivial.
 
 Pro tip: keep Zod schemas colocated with business logic (e.g., `schemas.ts`, `service.ts`) and import them into the router. That makes it trivial to reuse the same schema for form validation or client codegen.
 
@@ -212,7 +233,7 @@ Pro tip: keep Zod schemas colocated with business logic (e.g., `schemas.ts`, `se
 
 ## Testing the Slice
 
-1. `pnpm --filter web dev`.
+1. `pnpm --filter fast-next-playground dev`.
 2. Visit `http://localhost:3000/` → the hero section should display the featured user fetched through the server API client (built on top of the server caller).
 3. Hit `http://localhost:3000/api/health` and `/api/users/<id>` to verify the adapter path.
 4. Run `pnpm --filter @fast-next/fastify-zod-router check-types` or `pnpm --filter @fast-next/fastify-server-caller check-types` when editing the packages—they’re lightweight TypeScript projects so the command finishes quickly.

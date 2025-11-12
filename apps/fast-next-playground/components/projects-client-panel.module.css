@@ -1,0 +1,139 @@
+.panel {
+  border-radius: 26px;
+  padding: 24px 26px;
+  background: color-mix(in srgb, var(--background) 95%, transparent);
+  border: none;
+  box-shadow:
+    0 25px 55px color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.wrapper {
+  composes: panel;
+  font-family: var(--font-geist-sans);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.header h3 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.header p {
+  margin: 4px 0 0;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.actions button {
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  padding: 6px 14px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.actions button:hover:not(:disabled) {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #c62828;
+  font-weight: 600;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.placeholder {
+  font-style: italic;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.badge {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.form input,
+.form select {
+  font: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--background) 80%, transparent);
+  background: color-mix(in srgb, var(--background) 97%, transparent);
+  min-width: 140px;
+  flex: 1;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form input:focus-visible,
+.form select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--foreground) 35%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--foreground) 20%, transparent);
+}
+
+.form button {
+  border-radius: 10px;
+  border: 1px solid var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+  padding: 9px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.form button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  color: var(--background);
+}
+
+.form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

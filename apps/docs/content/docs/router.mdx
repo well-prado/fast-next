@@ -7,7 +7,7 @@ description: Define Fastify routes once with literal metadata and Zod schemas.
 
 ## Example
 
-```ts title="apps/web/src/server/routes/users.ts"
+```ts title="apps/fast-next-playground/src/server/http/routes/system/health.ts"
 import { createRoute } from "@fast-next/fastify-router";
 import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
@@ -20,21 +20,14 @@ const getUserSchema = {
   },
 } as const;
 
-export const userRoutes = [
+export const systemRoutes = [
   createRoute({
     method: "GET",
-    path: "/users/:id",
-    resource: "users",
-    operation: "get",
+    path: "/health",
+    resource: "system",
+    operation: "health",
     schema: getUserSchema,
-    handler: (async ({ params }, reply) => {
-      const user = await db.user.findUnique({ where: { id: params.id } });
-      if (!user) {
-        reply.code(404);
-        return { error: "User not found" };
-      }
-      return user;
-    }) satisfies TypedRouteHandler<typeof getUserSchema>,
+    handler: (async () => ({ status: "ok" as const })) satisfies TypedRouteHandler<typeof getUserSchema>,
   }),
 ] as const;
 ```
@@ -43,26 +36,28 @@ export const userRoutes = [
 
 - **Typed handlers** – `request.body`, `request.params`, and `reply` infer directly from the Zod schema.
 - **Literal metadata** – `resource` + `operation` names are never widened, so `api.users.get.query()` autocompletes.
-- **JSON Schema output** – `registerRoutes` uses `buildFastifySchema` under the hood so Fastify validation remains accurate.
+- **Zod-first validation** – Fastify runs your Zod schemas directly via `fastify-type-provider-zod`, so you get the same validation on HTTP requests as you do inside server callers.
 
 ## Composition
 
-```ts
-export async function registerRoutes(app: FastifyInstance) {
-  await registerFastifyRoutes(app, [
-    ...userRoutes,
-    ...projectRoutes,
-  ]);
+```ts title="src/server/http/routes/index.ts"
+export const serverRoutes = [
+  ...systemRoutes,
+  ...projectRoutes,
+] as const;
+
+export async function registerHttpRoutes(app: FastifyInstance) {
+  await registerFastifyRoutes(app, serverRoutes);
 }
 ```
 
-Need a prefix (`/v1`)? Pass `{ prefix: "/v1" }` to `registerFastifyRoutes` instead of duplicating paths.
+Need a prefix (`/v1`)? Pass `{ prefix: "/v1" }` to `registerFastifyRoutes` when calling `registerHttpRoutes`.
 
 ## Tips
 
-- **Colocate feature files** – `features/<name>/schemas.ts`, `service.ts`, `routes.ts` keeps things discoverable.
+- **Colocate feature files** – `src/server/http/routes/<name>/{schemas,service,routes}.ts` keeps things discoverable.
 - **Map response codes** – Even when the shape matches, declare `200` vs `404` separately so the server caller understands possible outcomes.
 - **Use `route()` for uncommon verbs** – `builder.route("OPTIONS", ...)` is available when you need it.
-- **Inspect schemas** – `buildFastifySchema` returns the converted JSON Schema if you want to feed Swagger or tooling.
+- **Inspect schemas** – Since the Zod schemas remain intact, you can reuse them for Swagger/OpenAPI tooling or share them with other runtimes without an extra conversion step.
 
 Follow these patterns and every route automatically lights up in the server client, browser hooks, and docs.

@@ -46,18 +46,22 @@ const CORE_DEPENDENCIES = [
   "@fast-next/fastify-server-client",
   "@fast-next/fastify-browser-client",
   "@fast-next/fastify-query-client",
+  "@fastify/cors",
+  "fastify-type-provider-zod",
+  "ioredis",
+  "@types/better-sqlite3",
 ];
 
 const QUEUE_DEPENDENCIES = ["bullmq", "ioredis"];
 const CACHE_DEPENDENCIES = {
   memory: [],
-  redis: ["ioredis"],
+  redis: [],
   upstash: [],
 };
 const AUTH_DEPENDENCIES = ["@fast-next/better-auth"];
 const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
 const DEP_VERSION_OVERRIDES = {
-  zod: "^3.25.0",
+  zod: "^4.1.12",
 };
 const INSTALL_COMMANDS = {
   pnpm: {
@@ -160,9 +164,7 @@ async function runInit(options) {
   const routeFile = path.join(projectRoot, apiDir, "route.ts");
   const serverDirAbs = path.join(projectRoot, serverDir);
   const fastifyAppFile = path.join(serverDirAbs, "fastify-app.ts");
-  const routesFile = path.join(serverDirAbs, "routes", "index.ts");
   const apiHelperFile = path.join(serverDirAbs, "api.ts");
-  const featuresDir = path.join(serverDirAbs, "features");
   const authServiceFile = path.join(serverDirAbs, "services", "auth", "better-auth.ts");
   const authRouteFile = path.join(appDirAbs, "api", "auth", "[...betterAuth]", "route.ts");
   const demoPageFile = path.join(appDirAbs, "demo", "page.tsx");
@@ -173,11 +175,29 @@ async function runInit(options) {
     clientComponentDir,
     "projects-client-panel.module.css",
   );
+  const httpDir = path.join(serverDirAbs, "http");
+  const httpRoutesDir = path.join(httpDir, "routes");
+  const httpErrorsDir = path.join(httpRoutesDir, "_errors");
+  const systemRoutesDir = path.join(httpRoutesDir, "system");
+  const projectsRoutesDir = path.join(httpRoutesDir, "projects");
+  const httpServerFile = path.join(httpDir, "server.ts");
+  const httpErrorHandlerFile = path.join(httpDir, "error-handler.ts");
+  const httpRoutesIndexFile = path.join(httpRoutesDir, "index.ts");
+  const systemHealthRouteFile = path.join(systemRoutesDir, "health.ts");
+  const systemIndexFile = path.join(systemRoutesDir, "index.ts");
+  const projectsListRouteFile = path.join(projectsRoutesDir, "list-projects.ts");
+  const projectsCreateRouteFile = path.join(projectsRoutesDir, "create-project.ts");
+  const projectsStoreFile = path.join(projectsRoutesDir, "store.ts");
+  const projectsIndexFile = path.join(projectsRoutesDir, "index.ts");
+  const httpBadRequestErrorFile = path.join(httpErrorsDir, "bad-request-error.ts");
+  const httpUnauthorizedErrorFile = path.join(httpErrorsDir, "unauthorized-error.ts");
 
   await ensureDir(path.dirname(routeFile));
   await ensureDir(path.dirname(fastifyAppFile));
-  await ensureDir(path.dirname(routesFile));
-  await ensureDir(featuresDir);
+  await ensureDir(httpRoutesDir);
+  await ensureDir(httpErrorsDir);
+  await ensureDir(systemRoutesDir);
+  await ensureDir(projectsRoutesDir);
 
   const relativeImportToFastifyApp = toImportPath(
     path.relative(path.dirname(routeFile), fastifyAppFile),
@@ -195,9 +215,18 @@ async function runInit(options) {
     }),
     force,
   );
-  await writeFile(routesFile, getRoutesIndexTemplate(), force);
+  await writeFile(httpServerFile, getHttpServerTemplate(), force);
+  await writeFile(httpErrorHandlerFile, getHttpErrorHandlerTemplate(), force);
+  await writeFile(systemHealthRouteFile, getSystemHealthRouteTemplate(), force);
+  await writeFile(systemIndexFile, getSystemRoutesIndexTemplate(), force);
+  await writeFile(projectsStoreFile, getProjectsStoreTemplate(), force);
+  await writeFile(projectsListRouteFile, getProjectsListRouteTemplate(), force);
+  await writeFile(projectsCreateRouteFile, getProjectsCreateRouteTemplate(), force);
+  await writeFile(projectsIndexFile, getProjectsRoutesIndexTemplate(), force);
+  await writeFile(httpRoutesIndexFile, getHttpRoutesIndexTemplate(), force);
+  await writeFile(httpBadRequestErrorFile, getBadRequestErrorTemplate(), force);
+  await writeFile(httpUnauthorizedErrorFile, getUnauthorizedErrorTemplate(), force);
   await writeFile(apiHelperFile, getServerApiTemplate(), force);
-  await writeFile(path.join(featuresDir, ".gitkeep"), "", false);
   await writeFile(clientApiFile, getBrowserClientTemplate(), force);
   await writeFile(projectsClientPanelFile, getProjectsClientPanelTemplate(), force);
   await writeFile(projectsClientPanelCssFile, getProjectsClientPanelCss(), force);
@@ -205,6 +234,16 @@ async function runInit(options) {
 
   const dependencySet = new Set(CORE_DEPENDENCIES);
   const postInitNotes = [];
+  const tsconfigAliasResult = await ensureTsconfigAlias(projectRoot);
+  if (tsconfigAliasResult.status === "missing") {
+    postInitNotes.push(
+      "tsconfig.json not found. Add an '@/*': ['./src/*', './*'] path mapping so the generated imports resolve.",
+    );
+  } else if (tsconfigAliasResult.status === "invalid") {
+    postInitNotes.push(
+      `tsconfig.json could not be parsed. Ensure '@/*' points to ['./src/*', './*']. (${tsconfigAliasResult.path})`,
+    );
+  }
 
   if (ormChoice.orm !== "none") {
     await scaffoldOrm({ projectRoot, serverDirAbs, force, choice: ormChoice });
@@ -283,13 +322,9 @@ async function runInit(options) {
   }
 
   console.log("\nNext steps:\n");
-  console.log(
-    "1. Ensure your tsconfig.json maps '@/*' to your source directory if you plan to use alias imports.",
-  );
-  console.log("2. Start Next.js with 'pnpm dev' and hit /api/health to verify the bridge.");
-  console.log(
-    "3. Visit /demo to exercise the server action + client hook playground that ships with the scaffold.",
-  );
+  console.log("1. Start Next.js with 'pnpm dev' and keep the Fastify bridge running.");
+  console.log("2. Hit /api/health to verify the API routes respond via Fastify.");
+  console.log("3. Visit /demo to exercise the server action + client hook playground.");
   if (postInitNotes.length) {
     console.log("\nAdditional notes:");
     postInitNotes.forEach((note) => {
@@ -306,21 +341,17 @@ async function runFeature(options) {
   const projectRoot = path.resolve(process.cwd(), options.dir ?? ".");
   const serverDir = options.server ?? path.join("src", "server");
   const serverDirAbs = path.join(projectRoot, serverDir);
-  const featuresDir = path.join(serverDirAbs, "features");
-  const featureDir = path.join(featuresDir, featureName);
-  const routesFile = path.join(serverDirAbs, "routes", "index.ts");
-  const routesFilePath = path.join(featureDir, "routes.ts");
-  const schemaFile = path.join(featureDir, "schemas.ts");
-  const serviceFile = path.join(featureDir, "service.ts");
-  const testFile = path.join(featureDir, "routes.test.ts");
+  const routesRoot = path.join(serverDirAbs, "http", "routes");
+  const featureDir = path.join(routesRoot, featureName);
+  const featureIndexFile = path.join(featureDir, "index.ts");
+  const routeFile = path.join(featureDir, `${featureName}.ts`);
+  const masterRoutesFile = path.join(routesRoot, "index.ts");
 
   await ensureDir(featureDir);
-  await writeFile(schemaFile, getFeatureSchemaTemplate(featureName), Boolean(options.force));
-  await writeFile(serviceFile, getFeatureServiceTemplate(featureName), Boolean(options.force));
-  await writeFile(routesFilePath, getFeatureRoutesTemplate(featureName), Boolean(options.force));
-  await writeFile(testFile, getFeatureTestTemplate(featureName), false);
-  await injectFeatureImport(routesFile, featureName);
-  console.log(`Feature '${featureName}' scaffolded (schemas, service, routes, test).`);
+  await writeFile(routeFile, getFeatureHttpRouteTemplate(featureName), Boolean(options.force));
+  await writeFile(featureIndexFile, getFeatureHttpRoutesIndexTemplate(featureName), false);
+  await injectFeatureImport(masterRoutesFile, featureName);
+  console.log(`Feature '${featureName}' scaffolded under server/http/routes/${featureName}.`);
 }
 
 async function runQueueCommand(options) {
@@ -486,198 +517,39 @@ import { auth } from "${authImportPath}";\n\n`
       : "";
 
   return `import { getFastifyApp } from "@fast-next/fastify-app-factory";
-import { registerRoutes } from "./routes";
+import { registerHttpServer } from "./http/server";
 ${authImports}export function getAppInstance() {
   return getFastifyApp({
-${pluginsLine}    configureApp: registerRoutes,
+${pluginsLine}    configureApp: registerHttpServer,
   });
 }
 `;
 }
 
-function getRoutesIndexTemplate() {
+function getHttpRoutesIndexTemplate() {
   return `import type { FastifyInstance } from "fastify";
 import {
-  createRoute,
   registerRoutes as registerFastifyRoutes,
   type FastifyRouteDefinition,
 } from "@fast-next/fastify-router";
-import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
-import { z } from "zod";
 
+import { systemRoutes } from "./system";
+import { projectRoutes } from "./projects";
 // FAST_NEXT_ROUTE_IMPORTS
-
-const userSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().email(),
-  title: z.string(),
-});
-
-const errorSchema = z.object({
-  error: z.string(),
-});
-
-const projectSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  status: z.enum(["draft", "active", "archived"]),
-});
-
-const USERS = [
-  {
-    id: "1",
-    name: "Ada Lovelace",
-    email: "ada@example.com",
-    title: "Analyst",
-  },
-  {
-    id: "2",
-    name: "Alan Turing",
-    email: "alan@example.com",
-    title: "Researcher",
-  },
-  {
-    id: "3",
-    name: "Grace Hopper",
-    email: "grace@example.com",
-    title: "Commodore",
-  },
-] as const;
-
-const initialProjects: Project[] = [
-  { id: "p1", name: "DX Overhaul", status: "active" },
-  { id: "p2", name: "Edge API Gateway", status: "draft" },
-  { id: "p3", name: "Realtime Sync", status: "archived" },
-];
-
-let projects: Project[] = [...initialProjects];
-
-const healthSchema = {
-  response: z.object({
-    status: z.literal("ok"),
-  }),
-} as const;
-
-const getUserSchema = {
-  params: z.object({
-    id: z.string(),
-  }),
-  response: {
-    200: userSchema,
-    404: errorSchema,
-  },
-} as const;
-
-const listProjectsSchema = {
-  response: z.object({
-    items: z.array(projectSchema),
-  }),
-} as const;
-
-const getProjectSchema = {
-  params: z.object({
-    id: z.string(),
-  }),
-  response: {
-    200: projectSchema,
-    404: errorSchema,
-  },
-} as const;
-
-const createProjectSchema = {
-  body: z.object({
-    name: z.string().min(3),
-    status: projectSchema.shape.status.optional().default("draft"),
-  }),
-  response: {
-    201: projectSchema,
-  },
-} as const;
+import { McpRoutes } from "../../features/mcp/routes";
 
 export const serverRoutes = [
-  createRoute({
-    method: "GET",
-    path: "/health",
-    resource: "system",
-    operation: "health",
-    schema: healthSchema,
-    handler: (async () => {
-      return { status: "ok" as const };
-    }) satisfies TypedRouteHandler<typeof healthSchema>,
-  }),
-  createRoute({
-    method: "GET",
-    path: "/users/:id",
-    resource: "users",
-    operation: "get",
-    schema: getUserSchema,
-    handler: (async (request, reply) => {
-      const user = USERS.find((candidate) => candidate.id === request.params.id);
-
-      if (!user) {
-        reply.code(404);
-        return { error: "User not found" };
-      }
-
-      return user;
-    }) satisfies TypedRouteHandler<typeof getUserSchema>,
-  }),
-  createRoute({
-    method: "GET",
-    path: "/projects",
-    resource: "projects",
-    operation: "list",
-    schema: listProjectsSchema,
-    handler: (async () => ({
-      items: projects,
-    })) satisfies TypedRouteHandler<typeof listProjectsSchema>,
-  }),
-  createRoute({
-    method: "GET",
-    path: "/projects/:id",
-    resource: "projects",
-    operation: "get",
-    schema: getProjectSchema,
-    handler: (async ({ params }, reply) => {
-      const project = projects.find((candidate) => candidate.id === params.id);
-
-      if (!project) {
-        reply.code(404);
-        return { error: "Project not found" };
-      }
-
-      return project;
-    }) satisfies TypedRouteHandler<typeof getProjectSchema>,
-  }),
-  createRoute({
-    method: "POST",
-    path: "/projects",
-    resource: "projects",
-    operation: "create",
-    schema: createProjectSchema,
-    handler: (async (request, reply) => {
-      const payload = request.body;
-      const newProject = {
-        id: \`p\${projects.length + 1}\`,
-        name: payload.name,
-        status: payload.status ?? "draft",
-      } as const;
-
-      projects = [...projects, newProject];
-      reply.code(201);
-      return newProject;
-    }) satisfies TypedRouteHandler<typeof createProjectSchema>,
-  }),
+  ...systemRoutes,
+  ...projectRoutes,
+  ...McpRoutes,
   // FAST_NEXT_ROUTE_SPREAD
 ] as const satisfies readonly FastifyRouteDefinition[];
 
 export type ServerRoutes = typeof serverRoutes;
 export type ServerRoute = ServerRoutes[number];
-export type User = z.infer<typeof userSchema>;
-export type Project = z.infer<typeof projectSchema>;
+export type { Project } from "./projects/store";
 
-export async function registerRoutes(app: FastifyInstance) {
+export async function registerHttpRoutes(app: FastifyInstance) {
   await registerFastifyRoutes(app, serverRoutes);
 }
 `;
@@ -687,16 +559,21 @@ function getServerApiTemplate() {
   return `import { createServerCaller } from "@fast-next/fastify-server-caller";
 import { createServerClient, FastifyQueryClient } from "@fast-next/fastify-server-client";
 import type { FastifyCaller } from "@fast-next/fastify-server-client";
+import type { FastifyRouteDefinition } from "@fast-next/fastify-router";
 import type { BuiltRouter } from "@fast-next/fastify-zod-router";
-import { registerRoutes, serverRoutes } from "./routes";
+import { registerHttpRoutes, serverRoutes } from "./http/routes";
 
 const builtRouter = {
   routes: serverRoutes,
-  register: registerRoutes,
+  register: registerHttpRoutes,
 } satisfies BuiltRouter<typeof serverRoutes>;
 
 export const serverCaller = createServerCaller(builtRouter);
-export const api = createServerClient(serverRoutes, serverCaller as FastifyCaller<typeof serverRoutes>);
+type ServerRoutesLiteral = typeof serverRoutes;
+type ServerRoutesDef = ServerRoutesLiteral & readonly FastifyRouteDefinition[];
+const typedServerRoutes = serverRoutes as ServerRoutesDef;
+const typedServerCaller = serverCaller as unknown as FastifyCaller<ServerRoutesDef>;
+export const api = createServerClient(typedServerRoutes, typedServerCaller);
 export const queryClient = new FastifyQueryClient();
 `;
 }
@@ -706,7 +583,7 @@ function getBrowserClientTemplate() {
 
 import { createBrowserClient } from "@fast-next/fastify-browser-client";
 import { FastifyQueryClient } from "@fast-next/fastify-query-client";
-import { serverRoutes } from "@/server/routes";
+import { serverRoutes } from "@/server/http/routes";
 
 const clientQueryCache = new FastifyQueryClient();
 
@@ -722,6 +599,7 @@ function getProjectsClientPanelTemplate() {
 
 import { useMemo, useState, type FormEvent } from "react";
 import { api } from "@/client/api";
+import type { Project } from "@/server/http/routes";
 import styles from "./projects-client-panel.module.css";
 
 const STATUS_OPTIONS = [
@@ -742,8 +620,8 @@ export function ProjectsClientPanel() {
     invalidate: { resource: "projects" },
   });
 
-  const projects = useMemo(
-    () => query.response?.data?.items ?? [],
+  const projects = useMemo<Project[]>(
+    () => (query.response?.data?.items as Project[]) ?? [],
     [query.response],
   );
 
@@ -825,6 +703,46 @@ export function ProjectsClientPanel() {
       </form>
     </section>
   );
+}
+
+`;
+}
+
+async function ensureTsconfigAlias(projectRoot) {
+  const tsconfigPath = path.join(projectRoot, "tsconfig.json");
+  const exists = await fileExists(tsconfigPath);
+  if (!exists) {
+    return { status: "missing", path: tsconfigPath };
+  }
+
+  let parsed;
+  try {
+    const raw = await fs.readFile(tsconfigPath, "utf8");
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: "invalid", path: tsconfigPath };
+  }
+
+  parsed.compilerOptions ??= {};
+  parsed.compilerOptions.paths ??= {};
+  const desired = ["./src/*", "./*"];
+  const current = parsed.compilerOptions.paths["@/*"];
+  const needsUpdate =
+    !Array.isArray(current) ||
+    current.length !== desired.length ||
+    desired.some((value, index) => current[index] !== value);
+
+  if (!needsUpdate) {
+    return { status: "ok", path: tsconfigPath };
+  }
+
+  parsed.compilerOptions.paths["@/*"] = desired;
+  const json = `${JSON.stringify(parsed, null, 2)}\n`;
+  await fs.writeFile(tsconfigPath, json, "utf8");
+  console.log(
+    `[update] ${path.relative(process.cwd(), tsconfigPath)} (set @/* alias -> ["./src/*","./*"])`,
+  );
+  return { status: "updated", path: tsconfigPath };
 }
 `;
 }
@@ -980,7 +898,7 @@ import Link from "next/link";
 import { ProjectsClientPanel } from "@/components/projects-client-panel";
 import panelStyles from "@/components/projects-client-panel.module.css";
 import { api } from "@/server/api";
-import type { Project } from "@/server/routes";
+import type { Project } from "@/server/http/routes";
 
 const STATUS_OPTIONS = ["draft", "active", "archived"] as const;
 
@@ -1011,8 +929,8 @@ async function createDemoProject(formData: FormData) {
 
 export default async function DemoPage() {
   const [healthResult, projectsResult] = await Promise.all([
-    api.system.health.query().catch(() => null),
-    api.projects.list.query().catch(() => null),
+    api.system.health.request().catch(() => null),
+    api.projects.list.request().catch(() => null),
   ]);
 
   const projects = (projectsResult?.data?.items ?? []) as Project[];
@@ -1180,6 +1098,244 @@ function ServerShowcase({
 `;
 }
 
+function getHttpServerTemplate() {
+  return `import fastifyCors from "@fastify/cors";
+import type { FastifyInstance } from "fastify";
+import {
+  serializerCompiler,
+  validatorCompiler,
+  ZodTypeProvider,
+} from "fastify-type-provider-zod";
+
+import { registerHttpRoutes } from "./routes";
+import { errorHandler } from "./error-handler";
+
+export async function registerHttpServer(app: FastifyInstance) {
+  app.withTypeProvider<ZodTypeProvider>();
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+  app.setErrorHandler(errorHandler);
+
+  await app.register(fastifyCors);
+  await registerHttpRoutes(app);
+}
+`;
+}
+
+function getHttpErrorHandlerTemplate() {
+  return `import type { FastifyInstance } from "fastify";
+import { ZodError } from "zod";
+
+import { BadRequestError } from "./routes/_errors/bad-request-error";
+import { UnauthorizedError } from "./routes/_errors/unauthorized-error";
+
+type FastifyErrorHandler = FastifyInstance["errorHandler"];
+
+export const errorHandler: FastifyErrorHandler = (error, _request, reply) => {
+  if (error instanceof ZodError) {
+    return reply.status(400).send({
+      message: "Validation error",
+      errors: error.flatten().fieldErrors,
+    });
+  }
+
+  if (error instanceof BadRequestError) {
+    return reply.status(400).send({
+      message: error.message,
+    });
+  }
+
+  if (error instanceof UnauthorizedError) {
+    return reply.status(401).send({
+      message: error.message,
+    });
+  }
+
+  console.error(error);
+
+  return reply.status(500).send({
+    message: "Internal server error",
+  });
+};
+`;
+}
+
+function getBadRequestErrorTemplate() {
+  return `export class BadRequestError extends Error {}
+`;
+}
+
+function getUnauthorizedErrorTemplate() {
+  return `export class UnauthorizedError extends Error {}
+`;
+}
+
+function getSystemHealthRouteTemplate() {
+  return `import { createRoute } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+const schema = {
+  response: {
+    200: z.object({
+      status: z.literal("ok"),
+    }),
+  },
+} as const;
+
+export const systemHealthRoute = createRoute({
+  method: "GET",
+  path: "/health",
+  resource: "system",
+  operation: "health",
+  schema,
+  handler: (async () => ({ status: "ok" as const })) satisfies TypedRouteHandler<typeof schema>,
+});
+`;
+}
+
+function getSystemRoutesIndexTemplate() {
+  return `import { systemHealthRoute } from "./health";
+
+export const systemRoutes = [systemHealthRoute] as const;
+`;
+}
+
+function getProjectsStoreTemplate() {
+  return `import { z } from "zod";
+
+export const projectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["draft", "active", "archived"]),
+});
+
+export type Project = z.infer<typeof projectSchema>;
+
+const projects: Project[] = [
+  { id: "p1", name: "DX Overhaul", status: "active" },
+  { id: "p2", name: "Edge API Gateway", status: "draft" },
+  { id: "p3", name: "Realtime Sync", status: "archived" },
+];
+
+export function listProjects() {
+  return projects;
+}
+
+export function addProject(project: Project) {
+  projects.push(project);
+  return project;
+}
+`;
+}
+
+function getProjectsListRouteTemplate() {
+  return `import { createRoute } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+import { listProjects, projectSchema } from "./store";
+
+const schema = {
+  response: {
+    200: z.object({
+      items: z.array(projectSchema),
+    }),
+  },
+} as const;
+
+export const listProjectsRoute = createRoute({
+  method: "GET",
+  path: "/projects",
+  resource: "projects",
+  operation: "list",
+  schema,
+  handler: (async () => ({
+    items: listProjects(),
+  })) satisfies TypedRouteHandler<typeof schema>,
+});
+`;
+}
+
+function getProjectsCreateRouteTemplate() {
+  return `import { createRoute } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+import { addProject, projectSchema } from "./store";
+
+const schema = {
+  body: z.object({
+    name: z.string().min(3),
+    status: projectSchema.shape.status.optional().default("draft"),
+  }),
+  response: {
+    201: projectSchema,
+  },
+} as const;
+
+export const createProjectRoute = createRoute({
+  method: "POST",
+  path: "/projects",
+  resource: "projects",
+  operation: "create",
+  schema,
+  handler: (async (request, reply) => {
+    const newProject = addProject({
+      id: \`p\${Date.now().toString().slice(-4)}\`,
+      name: request.body.name,
+      status: request.body.status ?? "draft",
+    });
+
+    reply.code(201);
+    return newProject;
+  }) satisfies TypedRouteHandler<typeof schema>,
+});
+`;
+}
+
+function getProjectsRoutesIndexTemplate() {
+  return `import { createProjectRoute } from "./create-project";
+import { listProjectsRoute } from "./list-projects";
+
+export const projectRoutes = [listProjectsRoute, createProjectRoute] as const;
+`;
+}
+
+function getFeatureHttpRouteTemplate(name) {
+  const pascal = toPascalCase(name);
+  const dash = dashCase(name);
+  return `import { createRoute } from "@fast-next/fastify-router";
+import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import { z } from "zod";
+
+const schema = {
+  response: {
+    200: z.object({
+      message: z.string(),
+    }),
+  },
+} as const;
+
+export const ${pascal}Route = createRoute({
+  method: "GET",
+  path: "/${dash}",
+  resource: "${dash}",
+  operation: "get",
+  schema,
+  handler: (async () => ({ message: "${pascal} route ready" })) satisfies TypedRouteHandler<typeof schema>,
+});
+`;
+}
+
+function getFeatureHttpRoutesIndexTemplate(name) {
+  const pascal = toPascalCase(name);
+  return `import { ${pascal}Route } from "./${name}";
+
+export const ${pascal}Routes = [${pascal}Route] as const;
+`;
+}
+
 function getBetterAuthServiceTemplate() {
   return `import type { BetterAuthOptions } from "@fast-next/better-auth";
 import { createFastNextAuth } from "@fast-next/better-auth";
@@ -1213,115 +1369,6 @@ export const OPTIONS = handlers.OPTIONS;
 `;
 }
 
-function getFeatureSchemaTemplate(name) {
-  const camel = camelCase(name);
-  const pascal = toPascalCase(name);
-  return `import { z } from "zod";
-
-export const ${camel}Schema = z.object({
-  id: z.string(),
-  name: z.string(),
-  status: z.enum(["draft", "active", "archived"]),
-});
-
-export const list${pascal}Schema = {
-  response: z.object({
-    items: z.array(${camel}Schema),
-  }),
-} as const;
-
-export const create${pascal}Schema = {
-  body: z.object({
-    name: z.string().min(3),
-    status: ${camel}Schema.shape.status.optional().default("draft"),
-  }),
-  response: {
-    201: ${camel}Schema,
-  },
-} as const;
-`;
-}
-
-function getFeatureServiceTemplate(name) {
-  const pascal = toPascalCase(name);
-  const camel = camelCase(name);
-  return `import type { z } from "zod";
-import { ${camel}Schema } from "./schemas";
-
-type ${pascal} = z.infer<typeof ${camel}Schema>;
-
-const data: ${pascal}[] = [
-  { id: "${camel}-1", name: "Sample ${pascal} A", status: "draft" },
-  { id: "${camel}-2", name: "Sample ${pascal} B", status: "active" },
-];
-
-export async function list${pascal}() {
-  return { items: data };
-}
-
-export async function create${pascal}(input: Pick<${pascal}, "name" | "status">) {
-  const next: ${pascal} = {
-    id: "${camel}-" + Date.now(),
-    name: input.name,
-    status: input.status ?? "draft",
-  };
-  data.push(next);
-  return next;
-}
-`;
-}
-
-function getFeatureRoutesTemplate(name) {
-  const pascal = toPascalCase(name);
-  const exportName = `${pascal}Routes`;
-  const resource = dashCase(name);
-  return `import { createRoute, type FastifyRouteDefinition } from "@fast-next/fastify-router";
-import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
-import { list${pascal}Schema, create${pascal}Schema } from "./schemas";
-import { list${pascal}, create${pascal} } from "./service";
-
-export const ${exportName} = [
-  createRoute({
-    method: "GET",
-    path: "/${resource}",
-    resource: "${resource}",
-    operation: "list",
-    schema: list${pascal}Schema,
-    handler: (async () => list${pascal}()) satisfies TypedRouteHandler<typeof list${pascal}Schema>,
-  }),
-  createRoute({
-    method: "POST",
-    path: "/${resource}",
-    resource: "${resource}",
-    operation: "create",
-    schema: create${pascal}Schema,
-    handler: (async (request, reply) => {
-      const created = await create${pascal}(request.body);
-      reply.code(201);
-      return created;
-    }) satisfies TypedRouteHandler<typeof create${pascal}Schema>,
-  }),
-] as const satisfies readonly FastifyRouteDefinition[];
-`;
-}
-
-function getFeatureTestTemplate(name) {
-  const resource = dashCase(name);
-  const pascal = toPascalCase(name);
-  return `// Example Vitest suite for the ${resource} feature.
-// Delete or adapt based on your testing stack.
-// import { describe, it, expect } from "vitest";
-// import { api } from "@/server/api";
-
-// describe("${pascal} routes", () => {
-//   it("lists ${resource}", async () => {
-//     const result = await api.${resource}.list.query();
-//     expect(result.statusCode).toBe(200);
-//   });
-// });
-`;
-}
-
 async function injectFeatureImport(routesFile, featureName) {
   const exists = await fileExists(routesFile);
   if (!exists) {
@@ -1335,13 +1382,7 @@ async function injectFeatureImport(routesFile, featureName) {
   }
   const pascal = toPascalCase(featureName);
   const exportName = `${pascal}Routes`;
-  const featureRoutesPath = path.join(
-    path.dirname(routesFile),
-    "..",
-    "features",
-    featureName,
-    "routes.ts",
-  );
+  const featureRoutesPath = path.join(path.dirname(routesFile), featureName, "index.ts");
   const relativeImport = toImportPath(path.relative(path.dirname(routesFile), featureRoutesPath));
   const importSnippet = `import { ${exportName} } from "${relativeImport}";\n${importMarker}`;
   const spreadSnippet = `  ...${exportName},\n  ${spreadMarker}`;
@@ -1366,11 +1407,6 @@ function dashCase(value) {
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .toLowerCase();
-}
-
-function camelCase(value) {
-  const pascal = toPascalCase(value);
-  return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 }
 
 async function resolveOrmOption(ormFlag, dbFlag, interactive) {
@@ -1692,7 +1728,7 @@ async function scaffoldCacheTemplate({ serverDirAbs, force, provider }) {
   const cacheDir = path.join(serverDirAbs, "services", "cache");
   await ensureDir(cacheDir);
   const filePath = path.join(cacheDir, "cache.service.ts");
-  await writeFile(filePath, getCacheServiceTemplate(provider), force);
+  await writeFile(filePath, getCacheServiceTemplate(), force);
   console.log(`[cache] ${provider} cache service created`);
 }
 
@@ -1829,7 +1865,7 @@ async function scaffoldMcpTemplate({ serverDirAbs, force }) {
   const routesFile = path.join(mcpFeatureDir, "routes.ts");
   await writeFile(routesFile, getMcpRoutesTemplate(), force);
 
-  const masterRoutesFile = path.join(serverDirAbs, "routes", "index.ts");
+  const masterRoutesFile = path.join(serverDirAbs, "http", "routes", "index.ts");
   await injectFeatureImport(masterRoutesFile, "mcp");
 
   console.log("[mcp] MCP server scaffolding created");
@@ -1868,358 +1904,8 @@ async function scaffoldMcpTool({ toolsDir, indexPath, name, force }) {
   console.log(`[mcp] tool '${name}' created at ${path.relative(process.cwd(), toolFile)}`);
 }
 
-function getCacheServiceTemplate(provider) {
-  const imports = [];
-  if (provider === "redis") {
-    imports.push('import IORedis from "ioredis";');
-  }
-  if (provider === "upstash") {
-    // Upstash provider uses native fetch, no extra imports required.
-  }
-
-  const redisProvider = `class RedisCacheProvider implements CacheProvider {
-  private client: IORedis;
-  constructor() {
-    this.client = new IORedis({
-      host: process.env.REDIS_HOST ?? "127.0.0.1",
-      port: Number(process.env.REDIS_PORT ?? 6379),
-      password: process.env.REDIS_PASSWORD || undefined,
-      keyPrefix: "fast-next:"
-    });
-  }
-
-  async get(key: string) {
-    const value = await this.client.get(key);
-    return value ? JSON.parse(value) : null;
-  }
-
-  async set(key: string, value: unknown, ttl?: number) {
-    const payload = JSON.stringify(value);
-    if (ttl) {
-      await this.client.setex(key, ttl, payload);
-    } else {
-      await this.client.set(key, payload);
-    }
-  }
-
-  async delete(key: string) {
-    await this.client.del(key);
-  }
-}`;
-
-  const upstashProvider = `class UpstashCacheProvider implements CacheProvider {
-  private readonly url: string;
-  private readonly token: string;
-
-  constructor() {
-    const url = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-    if (!url || !token) {
-      throw new Error("UPSTASH credentials are required when CACHE_PROVIDER=upstash");
-    }
-    this.url = url.endsWith("/") ? url.slice(0, -1) : url;
-    this.token = token;
-  }
-
-  private async request<T>(command: string, ...args: (string | number)[]) {
-    const response = await fetch(this.url, {
-      method: "POST",
-      headers: {
-        Authorization: \
-          \`Bearer \${this.token}\`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([command, ...args]),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(\`[upstash] \${command} failed (\${response.status}): \${text}\`);
-    }
-
-    const payload = (await response.json()) as [T, unknown] | { result?: T; error?: unknown };
-    if (Array.isArray(payload)) {
-      return payload[0];
-    }
-    if (payload.error) {
-      throw new Error(\`[upstash] \${command} error: \${JSON.stringify(payload.error)}\`);
-    }
-    return payload.result as T;
-  }
-
-  async get(key: string) {
-    const value = await this.request<string | null>("GET", key);
-    return value ? JSON.parse(value) : null;
-  }
-
-  async set(key: string, value: unknown, ttl?: number) {
-    const payload = JSON.stringify(value);
-    if (ttl) {
-      await this.request("SET", key, payload, "EX", ttl);
-    } else {
-      await this.request("SET", key, payload);
-    }
-  }
-
-  async delete(key: string) {
-    await this.request("DEL", key);
-  }
-}`;
-
-  const providerSwitch = `type CacheProviderName = "memory" | "redis" | "upstash";
-
-export function createCacheService(providerName: CacheProviderName = "${provider}") {
-  const resolved = (process.env.CACHE_PROVIDER ?? providerName) as CacheProviderName;
-  switch (resolved) {
-    case "redis":
-      return new CacheService(new RedisCacheProvider());
-    case "upstash":
-      return new CacheService(new UpstashCacheProvider());
-    default:
-      return new CacheService(new MemoryCacheProvider());
-  }
-}
-
-export const cache = createCacheService();
-`;
-
-  const providerClasses = [
-    `class MemoryCacheProvider implements CacheProvider {
-  private cache = new Map<string, { value: unknown; expiresAt?: number }>();
-
-  async get(key: string) {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (entry.expiresAt && Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
-      return null;
-    }
-    return entry.value;
-  }
-
-  async set(key: string, value: unknown, ttl?: number) {
-    this.cache.set(key, {
-      value,
-      expiresAt: ttl ? Date.now() + ttl * 1000 : undefined,
-    });
-  }
-
-  async delete(key: string) {
-    this.cache.delete(key);
-  }
-}`,
-  ];
-
-  if (provider === "redis") {
-    providerClasses.push(redisProvider);
-  }
-  if (provider === "upstash") {
-    providerClasses.push(upstashProvider);
-  }
-
-  return `${imports.join("\n")}
-
-export interface CacheProvider {
-  get<T = unknown>(key: string): Promise<T | null>;
-  set(key: string, value: unknown, ttl?: number): Promise<void>;
-  delete(key: string): Promise<void>;
-}
-
-export class CacheService {
-  constructor(private readonly provider: CacheProvider) {}
-
-  async get<T>(key: string) {
-    return this.provider.get<T>(key);
-  }
-
-  async set(key: string, value: unknown, ttl?: number) {
-    await this.provider.set(key, value, ttl);
-  }
-
-  async wrap<T>(key: string, fn: () => Promise<T>, ttl = 60) {
-    const cached = await this.provider.get<T>(key);
-    if (cached !== null && cached !== undefined) {
-      return cached;
-    }
-    const fresh = await fn();
-    await this.provider.set(key, fresh, ttl);
-    return fresh;
-  }
-
-  async delete(key: string) {
-    await this.provider.delete(key);
-  }
-}
-
-${providerClasses.join("\n\n")}
-
-${providerSwitch}`;
-}
-
-function getQueueServiceTemplate() {
-  return `import { Queue, Worker, type JobsOptions, type QueueOptions, type WorkerOptions, type Job } from "bullmq";
-import IORedis from "ioredis";
-
-type QueueConfig = QueueOptions & {
-  defaultJobOptions?: JobsOptions;
-};
-
-const sharedConnection = new IORedis({
-  host: process.env.REDIS_HOST ?? "127.0.0.1",
-  port: Number(process.env.REDIS_PORT ?? 6379),
-  password: process.env.REDIS_PASSWORD || undefined,
-});
-
-export class QueueService {
-  private queues = new Map<string, Queue>();
-  private workers = new Map<string, Worker>();
-
-  constructor(private readonly connectionFactory = () => sharedConnection.duplicate()) {}
-
-  registerQueue<T = unknown>(name: string, options?: QueueConfig) {
-    if (this.queues.has(name)) {
-      return this.queues.get(name) as Queue<T>;
-    }
-
-    const queue = new Queue<T>(name, {
-      connection: this.connectionFactory(),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 1_000 },
-        removeOnComplete: true,
-        removeOnFail: false,
-      },
-      ...options,
-    });
-
-    this.queues.set(name, queue);
-    return queue;
-  }
-
-  registerWorker<T = unknown>(
-    name: string,
-    processor: (job: Job<T>) => Promise<unknown>,
-    options?: WorkerOptions
-  ) {
-    if (!this.queues.has(name)) {
-      this.registerQueue<T>(name);
-    }
-
-    const worker = new Worker<T>(name, processor, {
-      connection: this.connectionFactory(),
-      concurrency: 5,
-      ...options,
-    });
-
-    worker.on("completed", (job) => {
-      console.log("[queue:" + name + "] job " + job.id + " completed");
-    });
-
-    worker.on("failed", (job, error) => {
-      console.error("[queue:" + name + "] job " + (job?.id ?? "unknown") + " failed", error);
-    });
-
-    this.workers.set(name, worker);
-    return worker;
-  }
-}
-
-export const queueService = new QueueService();
-`;
-}
-
-function getQueueExampleTemplate() {
-  return `import { queueService } from "../services/queue.service";
-
-export type EmailPayload = {
-  to: string;
-  subject: string;
-  body: string;
-};
-
-export const emailQueue = queueService.registerQueue<EmailPayload>("email");
-
-export async function enqueueEmail(payload: EmailPayload) {
-  return emailQueue.add("send-email", payload, {
-    priority: 1,
-  });
-}
-`;
-}
-
-function getQueueWorkerTemplate() {
-  return `import type { Job } from "bullmq";
-import { queueService } from "../services/queue.service";
-import { emailQueue, type EmailPayload } from "../queues/email.queue";
-
-queueService.registerWorker<EmailPayload>(emailQueue.name, async (job: Job<EmailPayload>) => {
-  const { to, subject, body } = job.data;
-    console.log("[worker] sending email to " + to + ": " + subject);
-  console.log(body);
-  return { deliveredAt: Date.now() };
-});
-`;
-}
-
-function getQueueWorkerIndexTemplate() {
-  return `import "./email.worker";
-
-console.log("[workers] email worker registered");
-`;
-}
-
-function getCustomQueueTemplate(name) {
-  const pascal = toPascalCase(name);
-  return `import { queueService } from "../services/queue.service";
-
-export type ${pascal}Payload = Record<string, unknown>;
-
-export const ${name}Queue = queueService.registerQueue<${pascal}Payload>("${name}");
-
-export async function enqueue${pascal}(jobName: string, payload: ${pascal}Payload) {
-  return ${name}Queue.add(jobName, payload);
-}
-`;
-}
-
-function getCustomWorkerTemplate(name) {
-  const pascal = toPascalCase(name);
-  return `import type { Job } from "bullmq";
-import { queueService } from "../services/queue.service";
-import { ${name}Queue, type ${pascal}Payload } from "../queues/${name}.queue";
-
-queueService.registerWorker<${pascal}Payload>(${name}Queue.name, async (job: Job<${pascal}Payload>) => {
-    console.log("[${name} worker] received job " + job.name, job.data);
-  return { handledAt: Date.now() };
-});
-`;
-}
-
-async function scaffoldPrisma(projectRoot, db, force) {
-  const prismaDir = path.join(projectRoot, "prisma");
-  await ensureDir(prismaDir);
-  await writeFile(path.join(prismaDir, "schema.prisma"), getPrismaSchemaTemplate(db), force);
-
-  const envPath = path.join(projectRoot, ".env");
-  if (!(await fileExists(envPath))) {
-    await fs.writeFile(envPath, getPrismaEnvTemplate(db), "utf8");
-  }
-}
-
-async function scaffoldDrizzle(projectRoot, serverDirAbs, db, force) {
-  const drizzleDir = path.join(serverDirAbs, "services", "drizzle");
-  await ensureDir(drizzleDir);
-  await writeFile(path.join(drizzleDir, "schema.ts"), getDrizzleSchemaTemplate(), force);
-  await writeFile(path.join(drizzleDir, "client.ts"), getDrizzleClientTemplate(db), force);
-  await writeFile(path.join(projectRoot, "drizzle.config.ts"), getDrizzleConfigTemplate(db), force);
-  const envPath = path.join(projectRoot, ".env");
-  if (!(await fileExists(envPath))) {
-    await fs.writeFile(envPath, getDrizzleEnvTemplate(db), "utf8");
-  }
-}
-
 function getMcpServiceTemplate() {
-  return `import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+return `import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { ZodRawShape } from "zod";
 
@@ -2239,7 +1925,7 @@ type ToolCallResult = {
 type ToolConfig = {
   name: string;
   description?: string;
-  inputSchema?: ZodRawShape;
+  inputSchema?: Record<string, unknown>;
   handler: (input: unknown) => Promise<unknown>;
 };
 
@@ -2256,11 +1942,15 @@ export class FastNextMcpServer {
       return;
     }
     this.tools.set(tool.name, tool);
+    const normalizedSchema = tool.inputSchema
+      ? ({ ...tool.inputSchema } as ZodRawShape)
+      : undefined;
+
     this.server.registerTool(
       tool.name,
       {
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: normalizedSchema as any,
       },
       async (args: unknown) => normalizeToolResult(await tool.handler(args))
     );
@@ -2327,7 +2017,7 @@ function normalizeToolResult(result: unknown): ToolCallResult {
 
 function getMcpServerEntryTemplate() {
   return `import { mcpServer } from "./mcp.service";
-import "../../features/mcp/tools/ping.tool";
+import "../../features/mcp/tools";
 
 void mcpServer.start().catch((error) => {
   console.error("[mcp] failed to start", error);
@@ -2335,25 +2025,23 @@ void mcpServer.start().catch((error) => {
 `;
 }
 
-function getMcpToolTemplate(name = "ping") {
-  const description =
-    name === "ping"
-      ? "Return a pong response to test connectivity"
-      : `Tool '${name}' generated via CLI`;
+function getMcpToolTemplate(name) {
   return `import { mcpServer } from "@/server/services/mcp/mcp.service";
-import { z } from "zod";
+import { z, type ZodRawShape } from "zod";
 
 const payloadSchema = z
-  .record(z.unknown())
+  .record(z.string(), z.unknown())
   .optional()
   .describe("Tool-specific payload");
 
+const inputSchema: ZodRawShape = {
+  payload: payloadSchema,
+};
+
 mcpServer.registerTool({
   name: "${name}",
-  description: "${description}",
-  inputSchema: {
-    payload: payloadSchema,
-  },
+  description: "Return a pong response to test connectivity",
+  inputSchema,
   handler: async (input: unknown) => {
     const parsed = z
       .object({
@@ -2382,18 +2070,19 @@ mcpServer.registerTool({
 }
 
 function getMcpToolsIndexTemplate() {
-  return `// FAST_NEXT_MCP_TOOL_IMPORTS
+  return `import "./ping.tool";
+// FAST_NEXT_MCP_TOOL_IMPORTS
 `;
 }
 
 function getMcpRoutesTemplate() {
   return `import { createRoute, type FastifyRouteDefinition } from "@fast-next/fastify-router";
-import type { TypedRouteHandler } from "@fast-next/fastify-zod-router";
+import type { RouteSchema, TypedRouteHandler } from "@fast-next/fastify-zod-router";
 import { z } from "zod";
 import { mcpServer } from "../../services/mcp/mcp.service";
-import "./tools/ping.tool";
+import "./tools";
 
-const listToolsSchema = {
+const listToolsSchema: RouteSchema = {
   response: z.object({
     tools: z.array(
       z.object({
@@ -2417,343 +2106,167 @@ export const McpRoutes = [
 `;
 }
 
-function getDockerComposeTemplate() {
-  return `version: "3.9"
+function getCacheServiceTemplate() {
+  return `import IORedis from "ioredis";
 
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: pnpm dev --hostname 0.0.0.0 --port 3000
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-      - /app/node_modules
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: fast_next
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  mcp-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
-    command: pnpm exec tsx src/server/services/mcp/server.ts
-    environment:
-      MCP_PORT: 3001
-    ports:
-      - "3001:3001"
-    depends_on:
-      app:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-volumes:
-  postgres_data:
-  redis_data:
-`;
+export interface CacheProvider {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, ttl?: number): Promise<void>;
+  delete(key: string): Promise<void>;
 }
 
-function getDockerIgnoreTemplate() {
-  return `node_modules
-.turbo
-.next
-dist
-*.log
-.env
-`;
-}
+class MemoryCacheProvider implements CacheProvider {
+  private cache = new Map<string, { value: unknown; expiresAt?: number }>();
 
-function getEnvExampleTemplate() {
-  return `# App
-NODE_ENV=development
-PORT=3000
-
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/fast_next
-
-# Redis / Queue
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-
-# Cache providers
-CACHE_PROVIDER=memory
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-
-# MCP server
-MCP_PORT=3001
-`;
-}
-
-function getDockerfileTemplate() {
-  return `FROM node:20-alpine
-
-RUN corepack enable && apk add --no-cache bash curl
-
-WORKDIR /app
-
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
-
-COPY . .
-
-EXPOSE 3000
-
-CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
-`;
-}
-
-function getDockerfileMcpTemplate() {
-  return `FROM node:20-alpine
-
-RUN corepack enable && apk add --no-cache bash curl
-
-WORKDIR /app
-
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile || pnpm install
-
-COPY . .
-
-EXPOSE 3001
-
-CMD ["pnpm", "exec", "tsx", "src/server/services/mcp/server.ts"]
-`;
-}
-
-async function linkMcpTool(indexPath, name) {
-  const marker = "// FAST_NEXT_MCP_TOOL_IMPORTS";
-  let content;
-  if (await fileExists(indexPath)) {
-    content = await fs.readFile(indexPath, "utf8");
-  } else {
-    content = getMcpToolsIndexTemplate();
+  async get<T = unknown>(key: string): Promise<T | null> {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.value as T;
   }
 
-  if (content.includes(`"./${name}.tool"`)) {
-    await fs.writeFile(indexPath, content, "utf8");
-    return;
+  async set(key: string, value: unknown, ttl?: number) {
+    this.cache.set(key, {
+      value,
+      expiresAt: ttl ? Date.now() + ttl * 1000 : undefined,
+    });
   }
 
-  if (!content.includes(marker)) {
-    content = `${marker}\n${content}`;
+  async delete(key: string) {
+    this.cache.delete(key);
+  }
+}
+
+class RedisCacheProvider implements CacheProvider {
+  private client: IORedis;
+  constructor() {
+    this.client = new IORedis({
+      host: process.env.REDIS_HOST ?? "127.0.0.1",
+      port: Number(process.env.REDIS_PORT ?? 6379),
+      password: process.env.REDIS_PASSWORD || undefined,
+      keyPrefix: "fast-next:",
+    });
   }
 
-  const importLine = `import "./${name}.tool";\n`;
-  const next = content.replace(marker, `${importLine}${marker}`);
-  await fs.writeFile(indexPath, next, "utf8");
-}
-
-async function listMcpTools(indexPath) {
-  if (!(await fileExists(indexPath))) {
-    console.log("No MCP tools registered yet.");
-    return;
+  async get<T = unknown>(key: string): Promise<T | null> {
+    const value = await this.client.get(key);
+    return value ? (JSON.parse(value) as T) : null;
   }
-  const content = await fs.readFile(indexPath, "utf8");
-  const matches = [...content.matchAll(/import "\.\/(.+?)\.tool";/g)].map((match) => match[1]);
-  if (!matches.length) {
-    console.log("No MCP tools registered yet.");
-    return;
+
+  async set(key: string, value: unknown, ttl?: number) {
+    const payload = JSON.stringify(value);
+    if (ttl) {
+      await this.client.setex(key, ttl, payload);
+    } else {
+      await this.client.set(key, payload);
+    }
   }
-  console.log("Registered MCP tools:\n");
-  matches.forEach((tool) => {
-    console.log(`- ${tool}`);
-  });
-}
 
-function getPrismaSchemaTemplate(db) {
-  const provider = db === "mysql" ? "mysql" : db === "postgres" ? "postgresql" : "sqlite";
-  const urlComment = provider === "sqlite" ? "file:./dev.db" : 'env("DATABASE_URL")';
-  return `generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "${provider}"
-  url      = ${provider === "sqlite" ? `"${urlComment}"` : urlComment}
-}
-
-model Example {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-}
-`;
-}
-
-function getPrismaEnvTemplate(db) {
-  if (db === "sqlite") {
-    return `DATABASE_URL="file:./dev.db"\n`;
+  async delete(key: string) {
+    await this.client.del(key);
   }
-  if (db === "postgres") {
-    return `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fast_next"\n`;
+}
+
+class UpstashCacheProvider implements CacheProvider {
+  private readonly url: string;
+  private readonly token: string;
+
+  constructor() {
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (!url || !token) {
+      throw new Error("UPSTASH credentials are required when CACHE_PROVIDER=upstash");
+    }
+    this.url = url.endsWith("/") ? url.slice(0, -1) : url;
+    this.token = token;
   }
-  return `DATABASE_URL="mysql://root:password@localhost:3306/fast_next"\n`;
-}
 
-function getPrismaServiceTemplate() {
-  return `import { PrismaClient } from "@prisma/client";
+  private async request<T>(command: string, ...args: (string | number)[]) {
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: {
+        Authorization: \`Bearer \${this.token}\`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([command, ...args]),
+    });
 
-export const database = new PrismaClient();
-`;
-}
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(\`[upstash] \${command} failed (\${response.status}): \${text}\`);
+    }
 
-function getDrizzleSchemaTemplate() {
-  return `import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-
-export const example = sqliteTable("example", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .notNull(),
-});
-`;
-}
-
-function getDrizzleClientTemplate(db) {
-  const importLine =
-    db === "sqlite"
-      ? 'import Database from "better-sqlite3";\nimport { drizzle } from "drizzle-orm/better-sqlite3";'
-      : db === "postgres"
-        ? 'import { drizzle, type NodePgClient } from "drizzle-orm/node-postgres";'
-        : 'import mysql from "mysql2/promise";\nimport { drizzle } from "drizzle-orm/mysql2";';
-  return `${importLine}
-
-export async function getDatabase() {
-  ${db === "sqlite" ? "return drizzle(new Database('sqlite.db'));" : db === "postgres" ? "const { Pool } = await import('pg');\n  const pool = new Pool({ connectionString: process.env.DATABASE_URL });\n  return drizzle(pool as unknown as NodePgClient);" : "const pool = await mysql.createPool({ uri: process.env.DATABASE_URL });\n  return drizzle(pool);"}
-}
-`;
-}
-
-function getDrizzleConfigTemplate(db) {
-  const out = db === "sqlite" ? "./drizzle" : "./drizzle";
-  return `import { defineConfig } from "drizzle-kit";
-
-export default defineConfig({
-  schema: "./src/server/services/drizzle/schema.ts",
-  out: "${out}",
-  dialect: "${db === "sqlite" ? "sqlite" : db === "postgres" ? "postgresql" : "mysql"}",
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
-  },
-});
-`;
-}
-
-function getDrizzleEnvTemplate(db) {
-  if (db === "sqlite") {
-    return `DATABASE_URL="file:./sqlite.db"\n`;
+    const payload = (await response.json()) as [T, unknown] | { result?: T; error?: unknown };
+    if (Array.isArray(payload)) {
+      return payload[0];
+    }
+    if (payload.error) {
+      throw new Error(\`[upstash] \${command} error: \${JSON.stringify(payload.error)}\`);
+    }
+    return payload.result as T;
   }
-  if (db === "postgres") {
-    return `DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fast_next"\n`;
+
+  async get<T = unknown>(key: string): Promise<T | null> {
+    const value = await this.request<string | null>("GET", key);
+    return value ? (JSON.parse(value) as T) : null;
   }
-  return `DATABASE_URL="mysql://root:password@localhost:3306/fast_next"\n`;
-}
 
-function getContextTemplate(orm) {
-  if (orm === "prisma") {
-    return `import { database } from "./services/database";
-
-export function createAppContext() {
-  return { database };
-}
-
-export type AppContext = ReturnType<typeof createAppContext>;
-`;
+  async set(key: string, value: unknown, ttl?: number) {
+    const payload = JSON.stringify(value);
+    if (ttl) {
+      await this.request("SET", key, payload, "EX", ttl);
+    } else {
+      await this.request("SET", key, payload);
+    }
   }
-  if (orm === "drizzle") {
-    return `import { getDatabase } from "./services/drizzle/client";
 
-export async function createAppContext() {
-  const database = await getDatabase();
-  return { database };
-}
-
-export type AppContext = Awaited<ReturnType<typeof createAppContext>>;
-`;
+  async delete(key: string) {
+    await this.request("DEL", key);
   }
-  return `export function createAppContext() {
-  return {};
 }
 
-export type AppContext = ReturnType<typeof createAppContext>;
-`;
+export class CacheService {
+  constructor(private readonly provider: CacheProvider) {}
+
+  async get<T>(key: string) {
+    return this.provider.get<T>(key);
+  }
+
+  async set(key: string, value: unknown, ttl?: number) {
+    await this.provider.set(key, value, ttl);
+  }
+
+  async wrap<T>(key: string, fn: () => Promise<T>, ttl = 60) {
+    const cached = await this.provider.get<T>(key);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+    const fresh = await fn();
+    await this.provider.set(key, fresh, ttl);
+    return fresh;
+  }
+
+  async delete(key: string) {
+    await this.provider.delete(key);
+  }
 }
 
-function getPackageRunner(manager, execArgs) {
-  const trimmed = execArgs[0] === "exec" ? execArgs.slice(1) : execArgs;
-  switch (manager) {
-    case "pnpm":
-      return { bin: "pnpm", args: execArgs };
-    case "npm":
-      return { bin: "npm", args: ["exec", ...trimmed] };
-    case "yarn":
-      return { bin: "yarn", args: trimmed };
-    case "bun":
-      return { bin: "bun", args: ["x", ...trimmed] };
+type CacheProviderName = "memory" | "redis" | "upstash";
+
+export function createCacheService(providerName: CacheProviderName = "memory") {
+  const resolved = (process.env.CACHE_PROVIDER ?? providerName) as CacheProviderName;
+  switch (resolved) {
+    case "redis":
+      return new CacheService(new RedisCacheProvider());
+    case "upstash":
+      return new CacheService(new UpstashCacheProvider());
     default:
-      return { bin: manager, args: execArgs };
+      return new CacheService(new MemoryCacheProvider());
   }
 }
 
-function spawnInteractive(bin, args, cwd) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, {
-      cwd,
-      stdio: "inherit",
-    });
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`${bin} exited with code ${code}`));
-      }
-    });
-    child.on("error", reject);
-  });
-}
-
-await main();
+export const cache = createCacheService();
+`;}

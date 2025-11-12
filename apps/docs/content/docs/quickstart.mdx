@@ -19,16 +19,16 @@ pnpm dlx create-fast-next@latest init . \
 
 All flags are optional—omit them to answer prompts interactively. The CLI drops the API catch-all, Fastify server helpers, Better Auth bridge, optional queue/cache/MCP/Docker scaffolds, and (if selected) ORM boilerplate. After running with `--with-auth`, edit `src/server/services/auth/better-auth.ts` to configure adapters, secrets, and providers before hitting `/api/auth/*`. When you stay in interactive mode, the prompt mirrors the shadcn CLI: database → ORM → a multi-select of optional modules (↑/↓ + space, enter to confirm).
 
-## 2. Run the Web App
+## 2. Run the Playground App
 
 ```bash
-pnpm --filter web dev
+pnpm --filter fast-next-playground dev
 ```
 
-Visit `http://localhost:3000`. The home page renders data fetched via:
+Visit `http://localhost:3000`. The `/demo` page renders data fetched via:
 
-- `api.users.get.query()` in a **Server Component** (server caller, zero HTTP hop).
-- `api.projects.list.useQuery()` inside a **client component** (browser client hook).
+- `api.system.health.request()` / `api.projects.list.request()` inside a **Server Component** (server caller, zero HTTP hop).
+- `api.projects.list.useQuery()` and `api.projects.create.useMutation()` inside a **client component** (browser client hooks backed by `FastifyQueryClient`).
 
 ## 3. Smoke Test HTTP
 
@@ -37,16 +37,16 @@ curl http://localhost:3000/api/health
 curl http://localhost:3000/api/users/1
 ```
 
-These hit Fastify handlers defined in `apps/web/src/server/routes/index.ts`.
+These hit Fastify handlers defined in `apps/fast-next-playground/src/server/http/routes`.
 
 ## 4. Explore the Server Client
 
 ```ts
 import { api, queryClient } from "@/server/api";
 
-const user = await api.users.get.query({ params: { id: "1" } });
-const projects = await api.projects.list.query();
-await queryClient.fetchQuery("system", "health");
+const health = await api.system.health.request();
+const projects = await api.projects.list.request();
+await queryClient.fetchQuery("projects", "list");
 ```
 
 Every route automatically exposes `query`/`mutate` helpers plus query-client utilities for batching.
@@ -79,7 +79,7 @@ pnpm docker:up   # bring up app + postgres + redis + mcp
 ```bash
 pnpm --filter @fast-next/fastify-zod-router check-types
 pnpm --filter @fast-next/fastify-server-client check-types
-pnpm --filter web check-types
+pnpm --filter fast-next-playground check-types
 pnpm lint
 ```
 

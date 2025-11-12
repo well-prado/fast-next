@@ -51,15 +51,14 @@ This keeps all optional modules in one multi-select (exactly like the shadcn UI)
 - `--yes` → Skip prompts (great for AI/CI).
 - **Interactive tip** – Without `--yes` every prompt is arrow-driven: pick the database first, then the ORM, and use the multi-select (↑/↓ + space) to toggle queue/cache/auth/MCP/Docker before hitting enter. Flip `--yes` (or pass flags) if you need a fully non-interactive run.
 
-### What Gets Generated
-
-- **Core bridge** – API catch-all route, `fastify-app.ts`, `server/api.ts`, and `routes/index.ts` with FAST_NEXT markers for future inserts.
+- **Core bridge** – Catch-all API route, `src/server/fastify-app.ts`, the full `src/server/http/{routes,server}` tree (with FAST_NEXT markers), and `src/server/api.ts` + browser client wiring.
 - **Queues (BullMQ)** – `queue.service.ts`, `queues/email.queue.ts`, `workers/email.worker.ts`, `workers/index.ts` + queue scripts.
 - **Cache service** – Memory provider + chosen provider (Redis or Upstash) with unified `CacheService` API.
 - **Better Auth** – `services/auth/better-auth.ts`, `app/api/auth/[...betterAuth]/route.ts`, Fastify plugin registration, and docs pointing to configuration steps.
-- **MCP** – `services/mcp/mcp.service.ts`, standalone server entry, `features/mcp/tools` with a sample tool and index, plus Fastify routes listing tools.
+- **MCP** – `services/mcp/mcp.service.ts`, standalone server entry, `features/mcp/tools` with a sample tool/index, plus Fastify routes listing MCP tools.
 - **Docker** – `docker-compose.yml` (app/postgres/redis/mcp with health checks), `Dockerfile`, `Dockerfile.mcp`, `.dockerignore`, `.env.example`, and `docker:*` npm scripts.
 - **ORMs** – Prisma or Drizzle schemas, clients, context wiring, and `.env` templates.
+- **tsconfig alias** – Ensures `@/*` points to both `src/*` and project root so the generated imports resolve immediately.
 
 ## Commands
 

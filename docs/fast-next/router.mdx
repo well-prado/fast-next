@@ -48,7 +48,7 @@ When you call `.register(app)`, each route is registered via `app.route(...)` wi
 - `schema.params` → `params`
 - `schema.response` → per-status JSON Schema object
 
-You can inspect the converted schema via `buildFastifySchema` if you need custom tooling.
+Fastify consumes the Zod schemas directly via `fastify-type-provider-zod`, so you can reuse the exact same schema instances for tooling or shared validation.
 
 ### Prefixing and composition
 
