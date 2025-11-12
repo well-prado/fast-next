@@ -3,6 +3,7 @@ import type { Auth, BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { betterAuth } from "better-auth";
 import { nextCookies, toNextJsHandler } from "better-auth/next-js";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { TLSSocket } from "node:tls";
 
 export type { Auth, BetterAuthOptions, BetterAuthPlugin };
 
@@ -85,7 +86,11 @@ export function createFastifyBetterAuthPlugin({
     if (typeof app.decorate === "function") {
       app.decorate("betterAuth", auth);
       if (typeof app.decorateRequest === "function") {
-        app.decorateRequest("betterAuth", null);
+        app.decorateRequest("betterAuth", {
+          getter() {
+            return auth;
+          },
+        });
       }
     }
 
@@ -170,12 +175,17 @@ function serializeBody(request: FastifyRequest): BodyInit | undefined {
     return body;
   }
 
-  if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
-    return body;
+  if (Buffer.isBuffer(body)) {
+    return bufferToArrayBuffer(body);
+  }
+
+  if (body instanceof Uint8Array) {
+    return toArrayBuffer(body);
   }
 
   if (isIterableBuffer(body)) {
-    return Buffer.from(body);
+    const array = Uint8Array.from(body);
+    return toArrayBuffer(array);
   }
 
   if (body instanceof URLSearchParams) {
@@ -200,6 +210,16 @@ function isIterableBuffer(value: unknown): value is Iterable<number> {
     Symbol.iterator in value &&
     typeof (value as Iterable<unknown>)[Symbol.iterator] === "function"
   );
+}
+
+function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
+  const clone = Buffer.from(buffer);
+  return clone.buffer.slice(clone.byteOffset, clone.byteOffset + clone.byteLength);
+}
+
+function toArrayBuffer(view: Uint8Array): ArrayBuffer {
+  const clone = view.slice();
+  return clone.buffer.slice(clone.byteOffset, clone.byteOffset + clone.byteLength);
 }
 
 function buildSearchParams(payload: Record<string, unknown>): URLSearchParams {
@@ -273,15 +293,21 @@ function getSetCookieHeaders(headers: Headers): string[] {
 }
 
 function resolveOrigin(request: FastifyRequest): string {
-  const protocol =
-    request.protocol ??
-    (request.headers["x-forwarded-proto"]
-      ? String(request.headers["x-forwarded-proto"])
-      : request.socket?.encrypted
-        ? "https"
-        : "http");
+  const protocol = resolveProtocol(request);
   const host = request.headers.host ?? "localhost";
   return `${protocol}://${host}`;
+}
+
+function resolveProtocol(request: FastifyRequest) {
+  if (request.protocol) {
+    return request.protocol;
+  }
+  const forwarded = request.headers["x-forwarded-proto"];
+  if (forwarded) {
+    return String(forwarded);
+  }
+  const socket = request.socket as TLSSocket | undefined;
+  return socket?.encrypted ? "https" : "http";
 }
 
 function normalizeMountPath(value: string): string {

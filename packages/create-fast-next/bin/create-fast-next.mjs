@@ -52,7 +52,7 @@ const QUEUE_DEPENDENCIES = ["bullmq", "ioredis"];
 const CACHE_DEPENDENCIES = {
   memory: [],
   redis: ["ioredis"],
-  upstash: ["@upstash/redis"],
+  upstash: [],
 };
 const AUTH_DEPENDENCIES = ["@fast-next/better-auth"];
 const MCP_DEPENDENCIES = ["@modelcontextprotocol/sdk"];
@@ -168,10 +168,7 @@ async function runInit(options) {
   const demoPageFile = path.join(appDirAbs, "demo", "page.tsx");
   const clientApiFile = path.join(projectRoot, "client", "api.ts");
   const clientComponentDir = path.join(projectRoot, "components");
-  const projectsClientPanelFile = path.join(
-    clientComponentDir,
-    "projects-client-panel.tsx",
-  );
+  const projectsClientPanelFile = path.join(clientComponentDir, "projects-client-panel.tsx");
   const projectsClientPanelCssFile = path.join(
     clientComponentDir,
     "projects-client-panel.module.css",
@@ -392,12 +389,13 @@ async function runMcpCommand(options) {
     throw new Error("mcp command requires an action: start|status|tool");
   }
   const projectRoot = path.resolve(process.cwd(), options.dir ?? ".");
-  const entry = options.entry ?? path.join("src", "server", "services", "mcp", "server.ts");
+  const serverDir = options.server ?? path.join("src", "server");
+  const entry = options.entry ?? path.join(serverDir, "services", "mcp", "server.ts");
   const entryAbs = path.join(projectRoot, entry);
   const packageManager = detectPackageManager(projectRoot) ?? "pnpm";
   const toolsDir = path.join(
     projectRoot,
-    options.tools ?? path.join("src", "server", "features", "mcp", "tools"),
+    options.tools ?? path.join(serverDir, "features", "mcp", "tools"),
   );
   const indexPath = path.join(toolsDir, "index.ts");
 
@@ -412,7 +410,12 @@ async function runMcpCommand(options) {
     if (!name) {
       throw new Error("mcp tool command requires a tool name");
     }
-    await scaffoldMcpTool({ toolsDir, indexPath, name, force: Boolean(options.force) });
+    await scaffoldMcpTool({
+      toolsDir,
+      indexPath,
+      name,
+      force: Boolean(options.force),
+    });
   } else {
     throw new Error(`Unknown mcp action '${action}'. Use 'start', 'status', or 'tool <name>'.`);
   }
@@ -666,6 +669,7 @@ export const serverRoutes = [
       return newProject;
     }) satisfies TypedRouteHandler<typeof createProjectSchema>,
   }),
+    ...McpRoutes,
   // FAST_NEXT_ROUTE_SPREAD
 ] as const satisfies readonly FastifyRouteDefinition[];
 
@@ -683,6 +687,7 @@ export async function registerRoutes(app: FastifyInstance) {
 function getServerApiTemplate() {
   return `import { createServerCaller } from "@fast-next/fastify-server-caller";
 import { createServerClient, FastifyQueryClient } from "@fast-next/fastify-server-client";
+import type { FastifyCaller } from "@fast-next/fastify-server-client";
 import type { BuiltRouter } from "@fast-next/fastify-zod-router";
 import { registerRoutes, serverRoutes } from "./routes";
 
@@ -692,7 +697,7 @@ const builtRouter = {
 } satisfies BuiltRouter<typeof serverRoutes>;
 
 export const serverCaller = createServerCaller(builtRouter);
-export const api = createServerClient(serverRoutes, serverCaller);
+export const api = createServerClient(serverRoutes, serverCaller as FastifyCaller<typeof serverRoutes>);
 export const queryClient = new FastifyQueryClient();
 `;
 }
@@ -826,18 +831,22 @@ export function ProjectsClientPanel() {
 }
 
 function getProjectsClientPanelCss() {
-  return `.wrapper {
+  return `.panel {
+  border-radius: 26px;
+  padding: 24px 26px;
+  background: color-mix(in srgb, var(--background) 95%, transparent);
+  border: none;
+  box-shadow:
+    0 25px 55px color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.wrapper {
+  composes: panel;
   font-family: var(--font-geist-sans);
   display: flex;
   flex-direction: column;
   gap: 18px;
-  border-radius: 20px;
-  padding: 24px 26px;
-  background: color-mix(in srgb, var(--background) 97%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  box-shadow:
-    0 12px 30px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 2px 8px color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .header {
@@ -896,7 +905,6 @@ function getProjectsClientPanelCss() {
   padding: 12px 14px;
   border-radius: 14px;
   background: color-mix(in srgb, var(--foreground) 5%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
 }
 
 .placeholder {
@@ -925,10 +933,21 @@ function getProjectsClientPanelCss() {
   font: inherit;
   padding: 9px 12px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
-  background: color-mix(in srgb, var(--background) 98%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--background) 80%, transparent);
+  background: color-mix(in srgb, var(--background) 97%, transparent);
   min-width: 140px;
   flex: 1;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form input:focus-visible,
+.form select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--foreground) 35%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--foreground) 20%, transparent);
 }
 
 .form button {
@@ -960,6 +979,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { ProjectsClientPanel } from "@/components/projects-client-panel";
+import panelStyles from "@/components/projects-client-panel.module.css";
 import { api } from "@/server/api";
 import type { Project } from "@/server/routes";
 
@@ -1003,7 +1023,7 @@ export default async function DemoPage() {
   return (
     <div className="min-h-screen bg-background px-6 py-12 text-foreground sm:px-10 lg:px-24">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
-        <header className="flex flex-col gap-6 rounded-3xl border border-border/60 bg-background/80 p-6 shadow-lg shadow-black/5 backdrop-blur">
+        <header className={\`\${panelStyles.panel} flex flex-col gap-6\`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-foreground/70">
@@ -1059,7 +1079,7 @@ function ServerShowcase({
   const ok = health === "ok";
 
   return (
-    <section className="flex h-full flex-col gap-6 rounded-3xl border border-border/70 bg-background/80 p-6 shadow-lg shadow-black/5 backdrop-blur">
+    <section className={\`\${panelStyles.panel} flex h-full flex-col gap-6\`}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.4em] text-foreground/60">
@@ -1082,7 +1102,7 @@ function ServerShowcase({
           <dd
             className={\`rounded-full px-3 py-1 text-xs font-semibold uppercase \${ ok
                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100"
-                : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-100"\}\`}
+                : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-100"}\`}
           >
             {health}
           </dd>
@@ -1100,7 +1120,7 @@ function ServerShowcase({
       </dl>
 
       {recentProjects.length > 0 && (
-        <div className="rounded-2xl border border-border/50 bg-background/70 p-4">
+        <div className={\`\${panelStyles.panel} rounded-[20px] bg-background/90 p-4 shadow-inner shadow-black/10 dark:bg-black/50\`}>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-foreground/50">
             Recent projects
           </p>
@@ -1122,7 +1142,7 @@ function ServerShowcase({
 
       <form
         action={createDemoProject}
-        className="mt-auto flex flex-col gap-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-xs sm:flex-row"
+        className="mt-auto flex flex-col gap-3 rounded-[22px] border border-foreground/20 bg-background/80 p-4 text-xs shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] sm:flex-row"
       >
         <label className="sr-only" htmlFor="project-name">
           Project name
@@ -1131,7 +1151,7 @@ function ServerShowcase({
           id="project-name"
           name="name"
           placeholder="New project name"
-          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
+          className="w-full rounded-xl border border-foreground/20 bg-background/95 px-3 py-1.5 text-sm shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition focus-visible:outline-none focus-visible:border-foreground/35 focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_0_0_3px_rgba(255,255,255,0.08)]"
         />
         <label className="sr-only" htmlFor="project-status">
           Project status
@@ -1140,7 +1160,7 @@ function ServerShowcase({
           id="project-status"
           name="status"
           defaultValue="draft"
-          className="w-full rounded-xl border border-border/60 bg-background/90 px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground sm:max-w-[140px]"
+          className="w-full rounded-xl border border-foreground/20 bg-background/95 px-3 py-1.5 text-sm shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition focus-visible:outline-none focus-visible:border-foreground/35 focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06),0_0_0_3px_rgba(255,255,255,0.08)] sm:max-w-[140px]"
         >
           {STATUS_OPTIONS.map((option) => (
             <option key={option} value={option}>
@@ -1855,7 +1875,7 @@ function getCacheServiceTemplate(provider) {
     imports.push('import IORedis from "ioredis";');
   }
   if (provider === "upstash") {
-    imports.push('import { Redis as UpstashRedis } from "@upstash/redis";');
+    // Upstash provider uses native fetch, no extra imports required.
   }
 
   const redisProvider = `class RedisCacheProvider implements CacheProvider {
@@ -1889,32 +1909,61 @@ function getCacheServiceTemplate(provider) {
 }`;
 
   const upstashProvider = `class UpstashCacheProvider implements CacheProvider {
-  private client: UpstashRedis;
+  private readonly url: string;
+  private readonly token: string;
+
   constructor() {
     const url = process.env.UPSTASH_REDIS_REST_URL;
     const token = process.env.UPSTASH_REDIS_REST_TOKEN;
     if (!url || !token) {
       throw new Error("UPSTASH credentials are required when CACHE_PROVIDER=upstash");
     }
-    this.client = new UpstashRedis({ url, token });
+    this.url = url.endsWith("/") ? url.slice(0, -1) : url;
+    this.token = token;
+  }
+
+  private async request<T>(command: string, ...args: (string | number)[]) {
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: {
+        Authorization: \
+          \`Bearer \${this.token}\`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([command, ...args]),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(\`[upstash] \${command} failed (\${response.status}): \${text}\`);
+    }
+
+    const payload = (await response.json()) as [T, unknown] | { result?: T; error?: unknown };
+    if (Array.isArray(payload)) {
+      return payload[0];
+    }
+    if (payload.error) {
+      throw new Error(\`[upstash] \${command} error: \${JSON.stringify(payload.error)}\`);
+    }
+    return payload.result as T;
   }
 
   async get(key: string) {
-    const value = await this.client.get<string>(key);
+    const value = await this.request<string | null>("GET", key);
     return value ? JSON.parse(value) : null;
   }
 
   async set(key: string, value: unknown, ttl?: number) {
     const payload = JSON.stringify(value);
     if (ttl) {
-      await this.client.setex(key, ttl, payload);
+      await this.request("SET", key, payload, "EX", ttl);
     } else {
-      await this.client.set(key, payload);
+      await this.request("SET", key, payload);
     }
   }
 
   async delete(key: string) {
-    await this.client.del(key);
+    await this.request("DEL", key);
   }
 }`;
 
@@ -2171,8 +2220,8 @@ async function scaffoldDrizzle(projectRoot, serverDirAbs, db, force) {
 }
 
 function getMcpServiceTemplate() {
-  return `import { McpServer } from "@modelcontextprotocol/sdk/dist/esm/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/dist/esm/server/stdio.js";
+  return `import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { ZodRawShape } from "zod";
 
 type TextContent = {
@@ -2214,7 +2263,7 @@ export class FastNextMcpServer {
         description: tool.description,
         inputSchema: tool.inputSchema,
       },
-      async (args: unknown) => normalizeToolResult(await tool.handler(args)),
+      async (args: unknown) => normalizeToolResult(await tool.handler(args))
     );
   }
 
@@ -2292,10 +2341,13 @@ function getMcpToolTemplate(name = "ping") {
     name === "ping"
       ? "Return a pong response to test connectivity"
       : `Tool '${name}' generated via CLI`;
-  return `import { z } from "zod";
-import { mcpServer } from "../../services/mcp/mcp.service";
+  return `import { mcpServer } from "@/server/services/mcp/mcp.service";
+import { z } from "zod";
 
-const payloadSchema = z.record(z.unknown()).optional().describe("Tool-specific payload");
+const payloadSchema = z
+  .record(z.unknown())
+  .optional()
+  .describe("Tool-specific payload");
 
 mcpServer.registerTool({
   name: "${name}",
@@ -2310,7 +2362,7 @@ mcpServer.registerTool({
       })
       .safeParse(input);
 
-    const payload = parsed.success ? parsed.data.payload ?? null : null;
+    const payload = parsed.success ? (parsed.data.payload ?? null) : null;
 
     return {
       content: [
@@ -2607,12 +2659,12 @@ function getDrizzleClientTemplate(db) {
     db === "sqlite"
       ? 'import Database from "better-sqlite3";\nimport { drizzle } from "drizzle-orm/better-sqlite3";'
       : db === "postgres"
-        ? 'import { Pool } from "pg";\nimport { drizzle } from "drizzle-orm/node-postgres";'
+        ? 'import { drizzle, type NodePgClient } from "drizzle-orm/node-postgres";'
         : 'import mysql from "mysql2/promise";\nimport { drizzle } from "drizzle-orm/mysql2";';
   return `${importLine}
 
 export async function getDatabase() {
-  ${db === "sqlite" ? "return drizzle(new Database('sqlite.db'));" : db === "postgres" ? "const pool = new Pool({ connectionString: process.env.DATABASE_URL });\n  return drizzle(pool);" : "const pool = await mysql.createPool({ uri: process.env.DATABASE_URL });\n  return drizzle(pool);"}
+  ${db === "sqlite" ? "return drizzle(new Database('sqlite.db'));" : db === "postgres" ? "const { Pool } = await import('pg');\n  const pool = new Pool({ connectionString: process.env.DATABASE_URL });\n  return drizzle(pool as unknown as NodePgClient);" : "const pool = await mysql.createPool({ uri: process.env.DATABASE_URL });\n  return drizzle(pool);"}
 }
 `;
 }
