@@ -669,7 +669,6 @@ export const serverRoutes = [
       return newProject;
     }) satisfies TypedRouteHandler<typeof createProjectSchema>,
   }),
-    ...McpRoutes,
   // FAST_NEXT_ROUTE_SPREAD
 ] as const satisfies readonly FastifyRouteDefinition[];
 
