@@ -744,8 +744,6 @@ async function ensureTsconfigAlias(projectRoot) {
   );
   return { status: "updated", path: tsconfigPath };
 }
-`;
-}
 
 function getProjectsClientPanelCss() {
   return `.panel {
